@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Stock Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap');
 
@@ -101,12 +101,12 @@
     width: 100%; height: 100%;
     position: absolute; inset: 0;
   }
-  #scanner-container video {
+  #zxing-video {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover;
+    display: block;
   }
-  #scanner-container canvas { display: none !important; }
 
   .scan-overlay {
     position: absolute; inset: 0;
@@ -634,6 +634,7 @@
   <div class="scan-area">
     <div class="scan-viewport">
       <div id="scanner-container">
+        <video id="zxing-video" autoplay muted playsinline style="display:none"></video>
         <div class="scan-placeholder" id="scan-placeholder">
           <div class="icon">📷</div>
           <div>Camera start කරන්න</div>
@@ -764,7 +765,7 @@
 // ═══ PRODUCT CATALOG ═══
 // ← ඔබේ items මෙහි add කරන්න (barcode, name, icon, unit)
 const CATALOG = [
-  { barcode:'0000026', name:'BURNT CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
+{ barcode:'0000026', name:'BURNT CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
   { barcode:'0000028', name:'DEVILLED CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
   { barcode:'0000029', name:'Pistachio 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
   { barcode:'000017', name:'Katupila Powder 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
@@ -1140,6 +1141,7 @@ let lastBarcode = '';
 let currentScanned = null;
 let cameraActive  = false;
 let toastTimer;
+let zxingReader = null;
 
 // ═══ TABS ═══
 function switchTab(tab) {
@@ -1150,12 +1152,19 @@ function switchTab(tab) {
   if (tab === 'export') renderPreview();
 }
 
-// ═══ CAMERA / SCANNER ═══
+// ═══ CAMERA / SCANNER (ZXing) ═══
 function toggleCamera() {
   cameraActive ? stopCamera() : startCamera();
 }
 
-function startCamera() {
+async function startCamera() {
+  // ZXing library namespace check
+  const ZXing = window.ZXingBrowser || window.ZXing;
+  if (!ZXing || !ZXing.BrowserMultiFormatReader) {
+    showToast('❌ Scanner library load නොවිය — page reload කරන්න', 'error');
+    return;
+  }
+
   document.getElementById('scan-placeholder').style.display = 'none';
   document.getElementById('scan-overlay').style.display = 'flex';
   document.getElementById('scan-status').textContent = 'Camera starting...';
@@ -1163,102 +1172,75 @@ function startCamera() {
   document.getElementById('btn-camera').textContent = '⏹ Camera Off';
   document.getElementById('btn-camera').className = 'btn-scan stop';
 
-  Quagga.init({
-    inputStream: {
-      name: 'Live',
-      type: 'LiveStream',
-      target: document.getElementById('scanner-container'),
-      constraints: {
-        facingMode: 'environment',
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      },
-    },
-    decoder: {
-      readers: ['ean_reader','ean_8_reader','code_128_reader','upc_reader','upc_e_reader'],
-      multiple: false,
-    },
-    locator: {
-      patchSize: 'medium',
-      halfSample: false,
-    },
-    locate: true,
-    frequency: 10,
-    numOfWorkers: 2,
-  }, err => {
-    if (err) {
-      showToast('Camera access error: ' + err.message, 'error');
-      stopCamera();
-      return;
-    }
-    Quagga.start();
-    cameraActive = true;
-    document.getElementById('scan-status').textContent = 'Scanning...';
-  });
+  const videoEl = document.getElementById('zxing-video');
+  videoEl.style.display = 'block';
 
-  // Confidence-based confirmation: same code must appear 3x with high confidence
-  const confirmBuffer = {};
-  const CONFIRM_NEEDED = 2;       // consecutive frames needed
-  const MIN_CONFIDENCE = 0.85;    // minimum per-character confidence
+  try {
+    const hints = new Map();
+    const formats = [
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.ITF,
+      ZXing.BarcodeFormat.DATA_MATRIX,
+      ZXing.BarcodeFormat.QR_CODE,
+    ];
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
-  Quagga.offDetected();
-  Quagga.offProcessed();
-
-  // processedCallback — draw nothing extra, just filter low-quality frames silently
-  Quagga.onProcessed(result => {
-    if (!result || !result.codeResult) return;
-    // reject if any character confidence is below threshold
-    const decodedCode = result.codeResult;
-    if (decodedCode.decodedCodes) {
-      const allHigh = decodedCode.decodedCodes
-        .filter(c => c.error !== undefined)
-        .every(c => (1 - c.error) >= MIN_CONFIDENCE);
-      if (!allHigh) {
-        // low confidence frame — clear buffer for this code
-        if (confirmBuffer[decodedCode.code] !== undefined) {
-          delete confirmBuffer[decodedCode.code];
-        }
-      }
-    }
-  });
-
-  Quagga.onDetected(result => {
-    const decodedCode = result.codeResult;
-    const code = decodedCode.code;
-
-    // 1. Check per-character confidence
-    if (decodedCode.decodedCodes) {
-      const allHigh = decodedCode.decodedCodes
-        .filter(c => c.error !== undefined)
-        .every(c => (1 - c.error) >= MIN_CONFIDENCE);
-      if (!allHigh) return;  // too uncertain — ignore frame
-    }
-
-    // 2. Require CONFIRM_NEEDED consecutive detections of same code
-    confirmBuffer[code] = (confirmBuffer[code] || 0) + 1;
-
-    // reset other codes
-    Object.keys(confirmBuffer).forEach(k => {
-      if (k !== code) delete confirmBuffer[k];
+    zxingReader = new ZXing.BrowserMultiFormatReader(hints, {
+      delayBetweenScanAttempts: 100,
+      delayBetweenScanSuccess: 1500,
     });
 
-    if (confirmBuffer[code] < CONFIRM_NEEDED) return; // not confirmed yet
+    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+    // prefer back camera
+    const backCam = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
+    const deviceId = backCam ? backCam.deviceId : undefined;
 
-    // 3. Confirmed — prevent duplicate processing
-    if (code === lastBarcode) return;
-    lastBarcode = code;
-    setTimeout(() => { lastBarcode = ''; }, 4000);
+    cameraActive = true;
+    document.getElementById('scan-status').textContent = 'Scanning...';
 
-    // 4. Stop camera immediately after confirmed scan
+    await zxingReader.decodeFromVideoDevice(deviceId, videoEl, (result, err) => {
+      if (!result) return;
+      const code = result.getText();
+      if (!code) return;
+
+      // Duplicate guard — same code within 4s ignored
+      if (code === lastBarcode) return;
+      lastBarcode = code;
+      setTimeout(() => { lastBarcode = ''; }, 4000);
+
+      // Haptic feedback
+      navigator.vibrate && navigator.vibrate(60);
+
+      stopCamera();
+      processBarcode(code);
+    });
+
+  } catch (err) {
+    showToast('Camera error: ' + (err.message || err), 'error');
     stopCamera();
-
-    // 5. Process the barcode
-    processBarcode(code);
-  });
+  }
 }
 
 function stopCamera() {
-  if (cameraActive) { Quagga.stop(); cameraActive = false; }
+  if (zxingReader) {
+    try { zxingReader.reset(); } catch(e) {}
+    zxingReader = null;
+  }
+  cameraActive = false;
+  const videoEl = document.getElementById('zxing-video');
+  if (videoEl) {
+    videoEl.style.display = 'none';
+    if (videoEl.srcObject) {
+      videoEl.srcObject.getTracks().forEach(t => t.stop());
+      videoEl.srcObject = null;
+    }
+  }
   document.getElementById('scan-placeholder').style.display = 'flex';
   document.getElementById('scan-overlay').style.display = 'none';
   document.getElementById('scan-status').textContent = 'Camera off';
