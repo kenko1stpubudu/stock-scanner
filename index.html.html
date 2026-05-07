@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Stock Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap');
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #161920;
+    --card: #1e2230;
+    --border: #2a2f3d;
+    --accent: #00e5a0;
+    --accent2: #7c6aff;
+    --warn: #ff6b35;
+    --text: #e8ecf4;
+    --muted: #6b7280;
+    --green: #00e5a0;
+    --red: #ff4d6d;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Syne', 'Noto Sans Sinhala', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-title { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+  .header-title span { color: var(--accent); }
+  .header-count {
+    background: var(--accent);
+    color: #000;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 12px 0;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── PAGES ── */
+  .page { display: none; flex: 1; overflow-y: auto; padding: 16px; }
+  .page.active { display: flex; flex-direction: column; gap: 14px; }
+
+  /* ── SCANNER PAGE ── */
+  .scan-area {
+    background: var(--card);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+  }
+  .scan-viewport {
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #000;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  #scanner-container {
+    width: 100%; height: 100%;
+    position: absolute; inset: 0;
+  }
+  #scanner-container video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+  }
+  #scanner-container canvas { display: none !important; }
+
+  .scan-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 5;
+  }
+  .scan-frame {
+    width: 65%; aspect-ratio: 3/1;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    position: relative;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+  }
+  .scan-line {
+    position: absolute;
+    left: 4px; right: 4px; top: 50%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scanAnim 2s ease-in-out infinite;
+  }
+  @keyframes scanAnim {
+    0%,100% { top: 15%; opacity: 0.6; }
+    50%      { top: 85%; opacity: 1; }
+  }
+  .scan-placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 10px; color: var(--muted); font-size: 13px;
+    height: 100%;
+  }
+  .scan-placeholder .icon { font-size: 42px; }
+
+  .scan-info {
+    padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .scan-status { font-size: 13px; color: var(--muted); }
+  .scan-status.active { color: var(--accent); }
+  .scan-status.found  { color: var(--green); font-weight: 700; }
+  .scan-status.error  { color: var(--red); }
+
+  .btn-scan {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .btn-scan:active { transform: scale(0.97); opacity: 0.85; }
+  .btn-scan.stop { background: var(--red); color: white; }
+
+  /* ── RESULT CARD ── */
+  .result-card {
+    background: var(--card);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    padding: 16px;
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .result-card.show { display: flex; }
+
+  .result-product {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .result-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; flex-shrink: 0;
+  }
+  .result-name { font-size: 16px; font-weight: 800; }
+  .result-barcode { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: monospace; }
+  .result-category { font-size: 11px; color: var(--accent2); font-weight: 700; margin-top: 3px; }
+
+  .stock-control {
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .stock-label { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stock-row {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .qty-btn {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    border: none;
+    font-size: 20px;
+    font-weight: 800;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.1s;
+    flex-shrink: 0;
+  }
+  .qty-btn:active { transform: scale(0.9); }
+  .qty-btn.minus { background: #2a1520; color: var(--red); }
+  .qty-btn.plus  { background: #0d2016; color: var(--green); }
+  .qty-input {
+    flex: 1;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 22px;
+    font-weight: 800;
+    text-align: center;
+    padding: 8px;
+    font-family: 'Syne', sans-serif;
+  }
+  .qty-input:focus { outline: none; border-color: var(--accent); }
+  .unit-label {
+    font-size: 13px; color: var(--muted);
+    flex-shrink: 0; font-weight: 600;
+  }
+
+  .btn-add {
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    color: #000;
+    border: none;
+    border-radius: 12px;
+    padding: 13px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    width: 100%;
+    transition: opacity 0.2s, transform 0.15s;
+    letter-spacing: 0.3px;
+  }
+  .btn-add:active { transform: scale(0.98); opacity: 0.85; }
+
+  /* ── MANUAL BARCODE ── */
+  .manual-row {
+    display: flex; gap: 8px;
+  }
+  .manual-input {
+    flex: 1;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-size: 14px;
+    padding: 11px 14px;
+    font-family: monospace;
+  }
+  .manual-input:focus { outline: none; border-color: var(--accent2); }
+  .btn-manual {
+    background: var(--accent2);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 11px 18px;
+    font-weight: 800;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-manual:active { opacity: 0.8; }
+
+  /* ── NOT FOUND ── */
+  .not-found-card {
+    background: #1a0d10;
+    border: 1px solid #3d1520;
+    border-radius: 14px;
+    padding: 16px;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .not-found-card.show { display: flex; }
+  .not-found-title { color: var(--red); font-weight: 800; font-size: 14px; }
+  .not-found-code { font-size: 12px; color: var(--muted); font-family: monospace; }
+  .nf-input {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 14px;
+    padding: 10px 12px;
+    font-family: 'Syne', 'Noto Sans Sinhala', sans-serif;
+    width: 100%;
+  }
+  .nf-input:focus { outline: none; border-color: var(--red); }
+  .nf-row { display: flex; gap: 8px; }
+  .btn-nf-add {
+    flex: 1; background: var(--red); color: white;
+    border: none; border-radius: 10px;
+    padding: 11px; font-weight: 800; font-size: 13px;
+    cursor: pointer;
+  }
+  .btn-nf-skip {
+    background: var(--border); color: var(--muted);
+    border: none; border-radius: 10px;
+    padding: 11px 16px; font-weight: 700; font-size: 13px;
+    cursor: pointer;
+  }
+
+  /* ── STOCK PAGE ── */
+  .stock-summary {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .summary-card {
+    background: var(--card);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 14px;
+  }
+  .summary-val { font-size: 26px; font-weight: 800; }
+  .summary-val.green { color: var(--accent); }
+  .summary-val.purple { color: var(--accent2); }
+  .summary-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 600; text-transform: uppercase; }
+
+  .search-bar {
+    display: flex;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+  }
+  .search-bar input {
+    flex: 1; background: none; border: none;
+    color: var(--text); font-size: 14px;
+    padding: 11px 0;
+    font-family: 'Syne', sans-serif;
+  }
+  .search-bar input:focus { outline: none; }
+  .search-icon { color: var(--muted); font-size: 16px; }
+
+  .stock-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .stock-item {
+    background: var(--card);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.2s;
+  }
+  .stock-item:active { border-color: var(--accent); }
+  .item-icon {
+    width: 42px; height: 42px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #1e2a44, #2a3650);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-barcode { font-size: 10px; color: var(--muted); font-family: monospace; margin-top: 1px; }
+  .item-qty {
+    text-align: right; flex-shrink: 0;
+  }
+  .qty-val { font-size: 20px; font-weight: 800; }
+  .qty-unit { font-size: 10px; color: var(--muted); }
+
+  .edit-btn {
+    width: 32px; height: 32px;
+    background: var(--border);
+    border: none; border-radius: 8px;
+    color: var(--muted); font-size: 14px;
+    cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .edit-btn:active { background: var(--accent2); color: white; }
+
+  .del-btn {
+    width: 32px; height: 32px;
+    background: #1a0d10;
+    border: none; border-radius: 8px;
+    color: var(--red); font-size: 14px;
+    cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .empty-state .emoji { font-size: 40px; margin-bottom: 10px; }
+
+  /* ── EXPORT PAGE ── */
+  .export-card {
+    background: var(--card);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .export-title { font-size: 15px; font-weight: 800; }
+  .export-sub { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .preview-table {
+    border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .preview-table table {
+    width: 100%; border-collapse: collapse;
+    font-size: 12px;
+  }
+  .preview-table th {
+    background: var(--bg);
+    padding: 9px 12px;
+    text-align: left;
+    color: var(--muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.4px;
+  }
+  .preview-table td {
+    padding: 9px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .preview-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .btn-export {
+    background: linear-gradient(135deg, #1a6640, var(--accent));
+    color: #000;
+    border: none;
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: opacity 0.2s;
+    letter-spacing: 0.3px;
+  }
+  .btn-export:active { opacity: 0.85; }
+
+  .btn-clear {
+    background: #1a0d10;
+    color: var(--red);
+    border: 1px solid #3d1520;
+    border-radius: 12px;
+    padding: 13px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    width: 100%;
+    transition: opacity 0.2s;
+  }
+  .btn-clear:active { opacity: 0.7; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 13px; font-weight: 700;
+    z-index: 999;
+    transition: transform 0.3s, opacity 0.3s;
+    opacity: 0;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error   { border-color: var(--red);   color: var(--red);   }
+  .toast.info    { border-color: var(--accent2); color: var(--accent2); }
+
+  /* ── ITEMS LIST MODAL ── */
+  .items-modal {
+    display: none;
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.7);
+    align-items: flex-end;
+  }
+  .items-modal.open { display: flex; }
+  .items-sheet {
+    background: var(--surface);
+    border-radius: 22px 22px 0 0;
+    width: 100%; max-height: 75vh;
+    overflow-y: auto;
+    padding: 0 0 24px;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .sheet-header {
+    position: sticky; top: 0;
+    background: var(--surface);
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .sheet-title { font-size: 15px; font-weight: 800; }
+  .sheet-close {
+    background: var(--border); border: none; color: var(--text);
+    width: 30px; height: 30px; border-radius: 50%;
+    font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .catalog-item {
+    padding: 12px 18px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .catalog-item:active { background: rgba(255,255,255,0.04); }
+  .cat-icon { font-size: 22px; width: 36px; text-align: center; }
+  .cat-info { flex: 1; }
+  .cat-name { font-size: 14px; font-weight: 700; }
+  .cat-code { font-size: 11px; color: var(--muted); font-family: monospace; }
+  .cat-check { color: var(--accent); font-size: 16px; display: none; }
+  .catalog-item.selected .cat-check { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">📦 Stock <span>Scanner</span></div>
+  <div class="header-count" id="total-badge">0 items</div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('scan')">📷 Scan</div>
+  <div class="tab" onclick="switchTab('stock')">📋 Stock</div>
+  <div class="tab" onclick="switchTab('export')">📊 Export</div>
+</div>
+
+<!-- ═══ SCAN PAGE ═══ -->
+<div class="page active" id="page-scan">
+
+  <div class="scan-area">
+    <div class="scan-viewport">
+      <div id="scanner-container">
+        <div class="scan-placeholder" id="scan-placeholder">
+          <div class="icon">📷</div>
+          <div>Camera start කරන්න</div>
+        </div>
+      </div>
+      <div class="scan-overlay" id="scan-overlay" style="display:none">
+        <div class="scan-frame"><div class="scan-line"></div></div>
+      </div>
+    </div>
+    <div class="scan-info">
+      <div class="scan-status" id="scan-status">Camera off</div>
+      <button class="btn-scan" id="btn-camera" onclick="toggleCamera()">📷 Camera On</button>
+    </div>
+  </div>
+
+  <div class="manual-row">
+    <input class="manual-input" id="manual-barcode" placeholder="Barcode manually type කරන්න..." inputmode="numeric">
+    <button class="btn-manual" onclick="processManual()">Search</button>
+  </div>
+
+  <div class="result-card" id="result-card">
+    <div class="result-product">
+      <div class="result-icon" id="res-icon">📦</div>
+      <div>
+        <div class="result-name" id="res-name">–</div>
+        <div class="result-barcode" id="res-barcode">–</div>
+        <div class="result-category" id="res-category">–</div>
+      </div>
+    </div>
+    <div class="stock-control">
+      <div class="stock-label">ස්ටොක් ප්‍රමාණය</div>
+      <div class="stock-row">
+        <button class="qty-btn minus" onclick="adjustQty(-1)">−</button>
+        <input class="qty-input" id="qty-input" type="number" value="1" min="0" inputmode="numeric">
+        <button class="qty-btn plus" onclick="adjustQty(1)">+</button>
+        <span class="unit-label" id="unit-label">Units</span>
+      </div>
+    </div>
+    <button class="btn-add" onclick="addToStock()">✅ Stock එකට Add කරන්න</button>
+  </div>
+
+  <div class="not-found-card" id="not-found-card">
+    <div class="not-found-title">❌ Barcode හඳුනාගත නොහැකි විය</div>
+    <div class="not-found-code" id="nf-barcode">–</div>
+    <input class="nf-input" id="nf-name" placeholder="Item නම ඇතුළු කරන්න...">
+    <div class="nf-row">
+      <button class="btn-nf-add" onclick="addUnknown()">+ Add කරන්න</button>
+      <button class="btn-nf-skip" onclick="skipUnknown()">Skip</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ STOCK PAGE ═══ -->
+<div class="page" id="page-stock">
+  <div class="stock-summary">
+    <div class="summary-card">
+      <div class="summary-val green" id="s-items">0</div>
+      <div class="summary-lbl">Item වර්ග</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-val purple" id="s-total">0</div>
+      <div class="summary-lbl">මුළු ප්‍රමාණය</div>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <span class="search-icon">🔍</span>
+    <input placeholder="Search..." id="search-input" oninput="renderStock()">
+  </div>
+
+  <div class="stock-list" id="stock-list">
+    <div class="empty-state">
+      <div class="emoji">📦</div>
+      <div>Scan කළ items මෙහි දිස් වේ</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EXPORT PAGE ═══ -->
+<div class="page" id="page-export">
+  <div class="export-card">
+    <div class="export-title">📊 Excel Export</div>
+    <div class="export-sub">සියලුම scanned items Excel file (.xlsx) ලෙස download කරගන්නට පහත button click කරන්න.</div>
+    <div class="preview-table" id="export-preview">
+      <table>
+        <thead><tr><th>#</th><th>Item Name</th><th>Barcode</th><th>Qty</th><th>Scanned At</th></tr></thead>
+        <tbody id="preview-body"><tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No data yet</td></tr></tbody>
+      </table>
+    </div>
+    <button class="btn-export" onclick="exportExcel()">⬇️ Excel Download කරන්න</button>
+    <button class="btn-clear" onclick="clearAll()">🗑️ සියල්ල මකන්න</button>
+  </div>
+</div>
+
+<!-- Items Catalog Modal -->
+<div class="items-modal" id="items-modal" onclick="handleModalClick(event)">
+  <div class="items-sheet">
+    <div class="sheet-header">
+      <div class="sheet-title">🔍 Item තෝරන්න</div>
+      <button class="sheet-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="catalog-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══ PRODUCT CATALOG ═══
+// ← ඔබේ items මෙහි add කරන්න (barcode, name, icon, unit)
+const CATALOG = [
+  // ── Nuts ──
+  { barcode:'4793001319515', name:'KENKO1ST BURNT CASHEW NUTS 100G',           icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319517', name:'KENKO1ST CASHEW NUTS CHILLI GARLIC 100G',   icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319521', name:'KENKO1ST CASHEW NUTS GARLIC 100G',          icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319523', name:'KENKO1ST ROASTED CASHEW NUT 100G',          icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319525', name:'KENKO1ST CASHEW NUT SALT AND PEPPER 100G',  icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319527', name:'KENKO1ST CASHEWNUT SALT 100G',              icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319529', name:'KENKO1ST CASHEW NUTS SUGAR COATED 100G',   icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319546', name:'LITTLE TS KITHUL PEANUTS 100G',            icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319591', name:'LITTLE TS DEVILED PEANUTS 125G',           icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319697', name:'KENKO1ST DEVILLED CASHEW NUT 100G',        icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555025', name:'KENKO1ST HAZEL NUT 85G',                   icon:'🌰', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555032', name:'KENKO1ST BASIL SEED 100G',                 icon:'🌱', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555049', name:'KENKO1ST CHIA SEEDS PACK 100G',            icon:'🌱', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555056', name:'KENKO1ST SUNFLOWER SEED PACK 100G',        icon:'🌻', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555254', name:'KENKO1ST ALMOND 45G',                      icon:'🥜', unit:'pcs', category:'Nuts' },
+  // ── Spices ──
+  { barcode:'4793001319653', name:'KENKO1ST CINNAMON POWDER 50G',             icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319659', name:'KENKO1ST CUMIN 100G',                      icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319692', name:'KENKO1ST CLOVE WHOLE 35G',                 icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319694', name:'KENKO1ST BLACK PEPPER WHOLE 100G',         icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319695', name:'Garcinia 100G',                            icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555124', name:'KENKO1ST GINGER POWDER 100G',              icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555193', name:'KENKO1ST BLACK PEPPER POWDER 100G',        icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555209', name:'KENKO1ST BLACK PEPPER POWDER 50G',         icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555230', name:'KENKO1ST CINNAMON POWDER 100G',            icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555261', name:'KENKO1ST CINNAMON STICK 80G',              icon:'🫙', unit:'pcs', category:'Spices' },
+];
+
+let stockData   = {};   // { barcode: { ...product, qty, lastScan } }
+let lastBarcode = '';
+let currentScanned = null;
+let cameraActive  = false;
+let toastTimer;
+
+// ═══ TABS ═══
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['scan','stock','export'][i] === tab));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + tab).classList.add('active');
+  if (tab === 'stock')  renderStock();
+  if (tab === 'export') renderPreview();
+}
+
+// ═══ CAMERA / SCANNER ═══
+function toggleCamera() {
+  cameraActive ? stopCamera() : startCamera();
+}
+
+function startCamera() {
+  document.getElementById('scan-placeholder').style.display = 'none';
+  document.getElementById('scan-overlay').style.display = 'flex';
+  document.getElementById('scan-status').textContent = 'Camera starting...';
+  document.getElementById('scan-status').className = 'scan-status active';
+  document.getElementById('btn-camera').textContent = '⏹ Camera Off';
+  document.getElementById('btn-camera').className = 'btn-scan stop';
+
+  Quagga.init({
+    inputStream: {
+      name: 'Live',
+      type: 'LiveStream',
+      target: document.getElementById('scanner-container'),
+      constraints: {
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+    },
+    decoder: {
+      readers: ['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader','codabar_reader']
+    },
+    locate: true,
+    frequency: 10,
+  }, err => {
+    if (err) {
+      showToast('Camera access error: ' + err.message, 'error');
+      stopCamera();
+      return;
+    }
+    Quagga.start();
+    cameraActive = true;
+    document.getElementById('scan-status').textContent = 'Scanning...';
+  });
+
+  Quagga.offDetected();
+  Quagga.onDetected(result => {
+    const code = result.codeResult.code;
+    if (code === lastBarcode) return;
+    lastBarcode = code;
+    setTimeout(() => { lastBarcode = ''; }, 3000);
+    processBarcode(code);
+  });
+}
+
+function stopCamera() {
+  if (cameraActive) { Quagga.stop(); cameraActive = false; }
+  document.getElementById('scan-placeholder').style.display = 'flex';
+  document.getElementById('scan-overlay').style.display = 'none';
+  document.getElementById('scan-status').textContent = 'Camera off';
+  document.getElementById('scan-status').className = 'scan-status';
+  document.getElementById('btn-camera').textContent = '📷 Camera On';
+  document.getElementById('btn-camera').className = 'btn-scan';
+}
+
+// ═══ BARCODE PROCESSING ═══
+function processManual() {
+  const code = document.getElementById('manual-barcode').value.trim();
+  if (!code) { showToast('Barcode ඇතුළු කරන්න', 'error'); return; }
+  processBarcode(code);
+  document.getElementById('manual-barcode').value = '';
+}
+
+function processBarcode(code) {
+  const product = CATALOG.find(p => p.barcode === code);
+  hideResultCards();
+
+  if (product) {
+    currentScanned = { ...product, barcode: code };
+    showResultCard(product, code);
+    navigator.vibrate && navigator.vibrate(60);
+    document.getElementById('scan-status').textContent = '✓ Found: ' + product.name;
+    document.getElementById('scan-status').className = 'scan-status found';
+  } else {
+    currentScanned = null;
+    document.getElementById('nf-barcode').textContent = 'Barcode: ' + code;
+    document.getElementById('nf-name').value = '';
+    document.getElementById('not-found-card').classList.add('show');
+    document.getElementById('not-found-card').dataset.barcode = code;
+    document.getElementById('scan-status').textContent = '✗ Not in catalog';
+    document.getElementById('scan-status').className = 'scan-status error';
+    navigator.vibrate && navigator.vibrate([80,40,80]);
+  }
+}
+
+function showResultCard(product, code) {
+  document.getElementById('res-icon').textContent = product.icon || '📦';
+  document.getElementById('res-name').textContent = product.name;
+  document.getElementById('res-barcode').textContent = code;
+  document.getElementById('res-category').textContent = product.category || '';
+  document.getElementById('unit-label').textContent = product.unit || 'pcs';
+
+  // existing qty
+  const existing = stockData[code];
+  document.getElementById('qty-input').value = existing ? existing.qty : 1;
+  document.getElementById('result-card').classList.add('show');
+}
+
+function hideResultCards() {
+  document.getElementById('result-card').classList.remove('show');
+  document.getElementById('not-found-card').classList.remove('show');
+}
+
+function adjustQty(delta) {
+  const inp = document.getElementById('qty-input');
+  inp.value = Math.max(0, parseInt(inp.value || 0) + delta);
+}
+
+function addToStock() {
+  if (!currentScanned) return;
+  const qty = parseInt(document.getElementById('qty-input').value) || 0;
+  const key = currentScanned.barcode;
+
+  stockData[key] = {
+    ...currentScanned,
+    qty,
+    lastScan: new Date().toLocaleString('si-LK')
+  };
+
+  updateBadge();
+  renderStock();
+  hideResultCards();
+  currentScanned = null;
+  showToast('✅ ' + stockData[key].name + ' — Qty: ' + qty, 'success');
+  document.getElementById('scan-status').textContent = 'Ready to scan';
+  document.getElementById('scan-status').className = 'scan-status active';
+}
+
+function addUnknown() {
+  const name = document.getElementById('nf-name').value.trim();
+  const code = document.getElementById('not-found-card').dataset.barcode;
+  if (!name) { showToast('Item නම ඇතුළු කරන්න', 'error'); return; }
+
+  stockData[code] = {
+    barcode: code, name, icon: '📦', unit: 'pcs',
+    category: 'Unknown', qty: 1,
+    lastScan: new Date().toLocaleString('si-LK')
+  };
+
+  updateBadge();
+  renderStock();
+  hideResultCards();
+  showToast('✅ ' + name + ' added', 'success');
+}
+
+function skipUnknown() {
+  hideResultCards();
+  document.getElementById('scan-status').textContent = 'Ready to scan';
+  document.getElementById('scan-status').className = 'scan-status active';
+}
+
+// ═══ STOCK LIST ═══
+function renderStock() {
+  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const list = document.getElementById('stock-list');
+  const items = Object.values(stockData).filter(i => !q || i.name.toLowerCase().includes(q) || i.barcode.includes(q));
+
+  document.getElementById('s-items').textContent = Object.keys(stockData).length;
+  document.getElementById('s-total').textContent = Object.values(stockData).reduce((s,i) => s + i.qty, 0);
+
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-state"><div class="emoji">📦</div><div>${q ? 'Results නැත' : 'Scan කළ items මෙහි දිස් වේ'}</div></div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(item => `
+    <div class="stock-item">
+      <div class="item-icon">${item.icon || '📦'}</div>
+      <div class="item-info">
+        <div class="item-name">${item.name}</div>
+        <div class="item-barcode">${item.barcode}</div>
+      </div>
+      <div class="item-qty">
+        <div class="qty-val" style="color:${item.qty > 0 ? 'var(--accent)' : 'var(--red)'}">${item.qty}</div>
+        <div class="qty-unit">${item.unit || 'pcs'}</div>
+      </div>
+      <button class="edit-btn" onclick="editItem('${item.barcode}')">✏️</button>
+      <button class="del-btn" onclick="deleteItem('${item.barcode}')">🗑</button>
+    </div>
+  `).join('');
+}
+
+function editItem(code) {
+  const item = stockData[code];
+  if (!item) return;
+  currentScanned = item;
+  showResultCard(item, code);
+  switchTab('scan');
+  document.getElementById('qty-input').value = item.qty;
+  showToast('Edit mode: ' + item.name, 'info');
+}
+
+function deleteItem(code) {
+  const name = stockData[code]?.name;
+  delete stockData[code];
+  updateBadge(); renderStock();
+  showToast('🗑 Deleted: ' + name, 'error');
+}
+
+// ═══ EXPORT ═══
+function renderPreview() {
+  const body = document.getElementById('preview-body');
+  const items = Object.values(stockData);
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No data yet</td></tr>';
+    return;
+  }
+  body.innerHTML = items.map((item, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${item.name}</td>
+      <td style="font-family:monospace;font-size:11px">${item.barcode}</td>
+      <td style="color:var(--accent);font-weight:800">${item.qty}</td>
+      <td style="font-size:11px;color:var(--muted)">${item.lastScan}</td>
+    </tr>
+  `).join('');
+}
+
+function exportExcel() {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('Export කිරීමට data නැත', 'error'); return; }
+
+  const date = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
+
+  const ws_data = [
+    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
+    ...items.map((item, i) => [
+      i+1, item.name, item.category || '', item.barcode,
+      item.qty, item.unit || 'pcs', item.lastScan
+    ]),
+    [],
+    ['', '', '', 'මුළු ප්‍රමාණය', items.reduce((s,i) => s + i.qty, 0), ''],
+    ['', '', '', 'Export Date', dateStr, ''],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+  // Column widths
+  ws['!cols'] = [
+    {wch:4}, {wch:28}, {wch:16}, {wch:18}, {wch:10}, {wch:8}, {wch:22}
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+  XLSX.writeFile(wb, `Kenko_Stock_${dateStr}.xlsx`);
+  showToast('✅ Excel download සාර්ථකයි!', 'success');
+}
+
+function clearAll() {
+  if (!Object.keys(stockData).length) { showToast('Data නැත', 'error'); return; }
+  if (confirm('සියලු stock data delete කරන්නද?')) {
+    stockData = {};
+    updateBadge(); renderStock(); renderPreview();
+    showToast('🗑 Stock data cleared', 'error');
+  }
+}
+
+// ═══ CATALOG MODAL ═══
+function openCatalog(preBarcode) {
+  const list = document.getElementById('catalog-list');
+  list.innerHTML = CATALOG.map(p => `
+    <div class="catalog-item ${stockData[p.barcode] ? 'selected' : ''}" onclick="selectFromCatalog('${p.barcode}')">
+      <div class="cat-icon">${p.icon}</div>
+      <div class="cat-info">
+        <div class="cat-name">${p.name}</div>
+        <div class="cat-code">${p.barcode}</div>
+      </div>
+      <div class="cat-check">✓</div>
+    </div>
+  `).join('');
+  document.getElementById('items-modal').classList.add('open');
+}
+
+function selectFromCatalog(barcode) {
+  closeModal();
+  processBarcode(barcode);
+}
+
+function closeModal() { document.getElementById('items-modal').classList.remove('open'); }
+function handleModalClick(e) { if (e.target === document.getElementById('items-modal')) closeModal(); }
+
+// ═══ UTILS ═══
+function updateBadge() {
+  const n = Object.keys(stockData).length;
+  document.getElementById('total-badge').textContent = n + (n === 1 ? ' item' : ' items');
+}
+
+function showToast(msg, type = 'info') {
+  clearTimeout(toastTimer);
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// Enter key for manual input
+document.getElementById('manual-barcode').addEventListener('keydown', e => {
+  if (e.key === 'Enter') processManual();
+});
+
+// Catalog shortcut — long press scan button
+let pressTimer;
+document.getElementById('btn-camera').addEventListener('touchstart', () => {
+  pressTimer = setTimeout(() => { stopCamera(); openCatalog(); }, 800);
+});
+document.getElementById('btn-camera').addEventListener('touchend', () => clearTimeout(pressTimer));
+</script>
+</body>
+</html>
