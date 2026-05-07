@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Stock Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap');
 
@@ -101,16 +100,14 @@
     width: 100%; height: 100%;
     position: absolute; inset: 0;
   }
-  /* html5-qrcode injects video/canvas inside #scanner-container */
-  #scanner-container video {
+  #scan-video {
     width: 100% !important;
     height: 100% !important;
-    object-fit: cover !important;
-    position: absolute !important;
-    inset: 0 !important;
+    object-fit: cover;
+    display: none;
+    position: absolute;
+    inset: 0;
   }
-  #scanner-container canvas { display: none !important; }
-  #scanner-container img { display: none !important; }
 
   .scan-overlay {
     position: absolute; inset: 0;
@@ -638,6 +635,7 @@
   <div class="scan-area">
     <div class="scan-viewport">
       <div id="scanner-container">
+        <video id="scan-video" autoplay muted playsinline playsinline></video>
         <div class="scan-placeholder" id="scan-placeholder">
           <div class="icon">📷</div>
           <div>Camera start කරන්න</div>
@@ -1154,120 +1152,155 @@ function switchTab(tab) {
   if (tab === 'export') renderPreview();
 }
 
-// ═══ CAMERA / SCANNER (html5-qrcode — mobile optimised) ═══
-let html5QrScanner = null;
+// ═══ CAMERA / SCANNER — Zero-library, native BarcodeDetector ═══
+let scanStream   = null;   // MediaStream
+let scanAnimId   = null;   // requestAnimationFrame id
+let scanCanvas   = null;   // offscreen canvas for BarcodeDetector
+let scanCtx      = null;
 
 function toggleCamera() {
   cameraActive ? stopCamera() : startCamera();
 }
 
 async function startCamera() {
-  if (typeof Html5Qrcode === 'undefined') {
-    showToast('❌ Scanner library load නොවිය — reload කරන්න', 'error');
-    return;
-  }
-
+  // ── UI: starting state ──
   document.getElementById('scan-placeholder').style.display = 'none';
-  document.getElementById('scan-overlay').style.display = 'flex';
-  document.getElementById('scan-status').textContent = 'Camera starting...';
-  document.getElementById('scan-status').className = 'scan-status active';
-  document.getElementById('btn-camera').textContent = '⏹ Camera Off';
-  document.getElementById('btn-camera').className = 'btn-scan stop';
+  document.getElementById('scan-overlay').style.display    = 'flex';
+  document.getElementById('scan-status').textContent       = 'Camera starting...';
+  document.getElementById('scan-status').className         = 'scan-status active';
+  document.getElementById('btn-camera').textContent        = '⏹ Camera Off';
+  document.getElementById('btn-camera').className          = 'btn-scan stop';
+
+  const videoEl = document.getElementById('scan-video');
 
   try {
-    html5QrScanner = new Html5Qrcode('scanner-container', { verbose: false });
-
-    const config = {
-      fps: 15,
-      qrbox: { width: 260, height: 90 },
-      aspectRatio: 1.7,
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.ITF,
-        Html5QrcodeSupportedFormats.QR_CODE,
-      ],
-    };
-
-    await html5QrScanner.start(
-      { facingMode: 'environment' },   // back camera
-      config,
-      (decodedText) => {
-        // success callback
-        if (!decodedText) return;
-        if (decodedText === lastBarcode) return;  // duplicate guard
-        lastBarcode = decodedText;
-        setTimeout(() => { lastBarcode = ''; }, 4000);
-
-        navigator.vibrate && navigator.vibrate(60);
-        stopCamera();
-        processBarcode(decodedText);
+    // ── Request back camera ──
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
       },
-      () => {}  // per-frame error — ignore silently
-    );
+      audio: false
+    });
+
+    videoEl.srcObject = scanStream;
+    videoEl.style.display = 'block';
+    await videoEl.play();
 
     cameraActive = true;
     document.getElementById('scan-status').textContent = 'Scanning...';
 
-  } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    // User denied camera permission
-    if (/denied|permission/i.test(msg)) {
-      showToast('📷 Camera permission allow කරන්න', 'error');
+    // ── Choose decode engine ──
+    if ('BarcodeDetector' in window) {
+      // Native BarcodeDetector (Android Chrome 83+, iOS Safari 17+)
+      const detector = new BarcodeDetector({
+        formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf','qr_code','data_matrix']
+      });
+      scanCanvas = document.createElement('canvas');
+      scanCtx    = scanCanvas.getContext('2d');
+
+      const tick = async () => {
+        if (!cameraActive) return;
+        if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+          try {
+            const barcodes = await detector.detect(videoEl);
+            if (barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              if (code && code !== lastBarcode) {
+                lastBarcode = code;
+                setTimeout(() => { lastBarcode = ''; }, 4000);
+                navigator.vibrate && navigator.vibrate(60);
+                stopCamera();
+                processBarcode(code);
+                return;
+              }
+            }
+          } catch(e) {}
+        }
+        scanAnimId = requestAnimationFrame(tick);
+      };
+      scanAnimId = requestAnimationFrame(tick);
+
     } else {
-      showToast('Camera error: ' + msg, 'error');
+      // ── Fallback: jscanify-style canvas pixel decode via Dynamsoft-free approach ──
+      // Load zxing-js/browser (ESM-compatible slim build via skypack)
+      showToast('Loading scanner engine...', 'info');
+      const mod = await import('https://cdn.skypack.dev/@zxing/browser@3.0.3');
+      const { BrowserMultiFormatReader } = mod;
+      const reader = new BrowserMultiFormatReader();
+      window._fallbackReader = reader;
+      await reader.decodeFromVideoElement(videoEl, (result, err) => {
+        if (!result) return;
+        const code = result.getText();
+        if (!code || code === lastBarcode) return;
+        lastBarcode = code;
+        setTimeout(() => { lastBarcode = ''; }, 4000);
+        navigator.vibrate && navigator.vibrate(60);
+        stopCamera();
+        processBarcode(code);
+      });
+    }
+
+  } catch (err) {
+    const msg = String(err.message || err);
+    if (/denied|permission|notallowed/i.test(msg)) {
+      showToast('📷 Camera permission allow කරන්න (browser settings)', 'error');
+    } else if (/notfound|devices/i.test(msg)) {
+      showToast('📷 Camera හොයා ගත නොහැකි විය', 'error');
+    } else {
+      showToast('Camera error: ' + msg.slice(0,60), 'error');
     }
     stopCamera();
   }
 }
 
-async function stopCamera() {
-  if (html5QrScanner) {
-    try {
-      if (html5QrScanner.isScanning) {
-        await html5QrScanner.stop();
-      }
-      html5QrScanner.clear();
-    } catch(e) {}
-    html5QrScanner = null;
+function stopCamera() {
+  // Stop rAF loop
+  if (scanAnimId) { cancelAnimationFrame(scanAnimId); scanAnimId = null; }
+
+  // Stop fallback ZXing reader
+  if (window._fallbackReader) {
+    try { window._fallbackReader.reset(); } catch(e) {}
+    window._fallbackReader = null;
   }
+
+  // Stop MediaStream tracks
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+
+  const videoEl = document.getElementById('scan-video');
+  if (videoEl) { videoEl.srcObject = null; videoEl.style.display = 'none'; }
+
   cameraActive = false;
   document.getElementById('scan-placeholder').style.display = 'flex';
-  document.getElementById('scan-overlay').style.display = 'none';
-  document.getElementById('scan-status').textContent = 'Camera off';
-  document.getElementById('scan-status').className = 'scan-status';
-  document.getElementById('btn-camera').textContent = '📷 Camera On';
-  document.getElementById('btn-camera').className = 'btn-scan';
+  document.getElementById('scan-overlay').style.display     = 'none';
+  document.getElementById('scan-status').textContent        = 'Camera off';
+  document.getElementById('scan-status').className          = 'scan-status';
+  document.getElementById('btn-camera').textContent         = '📷 Camera On';
+  document.getElementById('btn-camera').className           = 'btn-scan';
 }
 
-// ── Barcode Normalization & Smart Matching ──
+// ═══ BARCODE PROCESSING ═══
+function processManual() {
+  const code = document.getElementById('manual-barcode').value.trim();
+  if (!code) { showToast('Barcode ඇතුළු කරන්න', 'error'); return; }
+  processBarcode(code);
+  document.getElementById('manual-barcode').value = '';
+}
+
+// ── Smart barcode matching (handles leading zeros, EAN vs UPC differences) ──
 function normalizeBarcode(code) {
-  // Strip leading zeros, trim whitespace — handles EAN/UPC format differences
   return String(code).trim().replace(/^0+/, '') || '0';
 }
-
 function findInCatalog(raw) {
   const norm = normalizeBarcode(raw);
-
-  // 1. Exact string match
-  let hit = CATALOG.find(p => p.barcode === raw);
-  if (hit) return hit;
-
-  // 2. Leading-zeros-stripped match (e.g. "0000026" vs "26")
-  hit = CATALOG.find(p => normalizeBarcode(p.barcode) === norm);
-  if (hit) return hit;
-
-  // 3. Suffix match — EAN-13 wraps UPC-A with a leading country digit
-  //    e.g. catalog "04890008100309" vs scanned "4890008100309"
-  hit = CATALOG.find(p => {
-    const cn = normalizeBarcode(p.barcode);
-    return norm.endsWith(cn) || cn.endsWith(norm);
-  });
-  return hit || null;
+  return CATALOG.find(p => p.barcode === raw)
+      || CATALOG.find(p => normalizeBarcode(p.barcode) === norm)
+      || CATALOG.find(p => { const c = normalizeBarcode(p.barcode); return norm.endsWith(c) || c.endsWith(norm); })
+      || null;
 }
 
 function processBarcode(code) {
