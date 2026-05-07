@@ -736,10 +736,16 @@ function startCamera() {
       },
     },
     decoder: {
-      readers: ['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader','codabar_reader']
+      readers: ['ean_reader','ean_8_reader','code_128_reader','upc_reader','upc_e_reader'],
+      multiple: false,
+    },
+    locator: {
+      patchSize: 'medium',
+      halfSample: false,
     },
     locate: true,
     frequency: 10,
+    numOfWorkers: 2,
   }, err => {
     if (err) {
       showToast('Camera access error: ' + err.message, 'error');
@@ -751,12 +757,63 @@ function startCamera() {
     document.getElementById('scan-status').textContent = 'Scanning...';
   });
 
+  // Confidence-based confirmation: same code must appear 3x with high confidence
+  const confirmBuffer = {};
+  const CONFIRM_NEEDED = 3;       // consecutive frames needed
+  const MIN_CONFIDENCE = 0.85;    // minimum per-character confidence
+
   Quagga.offDetected();
+  Quagga.offProcessed();
+
+  // processedCallback — draw nothing extra, just filter low-quality frames silently
+  Quagga.onProcessed(result => {
+    if (!result || !result.codeResult) return;
+    // reject if any character confidence is below threshold
+    const decodedCode = result.codeResult;
+    if (decodedCode.decodedCodes) {
+      const allHigh = decodedCode.decodedCodes
+        .filter(c => c.error !== undefined)
+        .every(c => (1 - c.error) >= MIN_CONFIDENCE);
+      if (!allHigh) {
+        // low confidence frame — clear buffer for this code
+        if (confirmBuffer[decodedCode.code] !== undefined) {
+          delete confirmBuffer[decodedCode.code];
+        }
+      }
+    }
+  });
+
   Quagga.onDetected(result => {
-    const code = result.codeResult.code;
+    const decodedCode = result.codeResult;
+    const code = decodedCode.code;
+
+    // 1. Check per-character confidence
+    if (decodedCode.decodedCodes) {
+      const allHigh = decodedCode.decodedCodes
+        .filter(c => c.error !== undefined)
+        .every(c => (1 - c.error) >= MIN_CONFIDENCE);
+      if (!allHigh) return;  // too uncertain — ignore frame
+    }
+
+    // 2. Require CONFIRM_NEEDED consecutive detections of same code
+    confirmBuffer[code] = (confirmBuffer[code] || 0) + 1;
+
+    // reset other codes
+    Object.keys(confirmBuffer).forEach(k => {
+      if (k !== code) delete confirmBuffer[k];
+    });
+
+    if (confirmBuffer[code] < CONFIRM_NEEDED) return; // not confirmed yet
+
+    // 3. Confirmed — prevent duplicate processing
     if (code === lastBarcode) return;
     lastBarcode = code;
-    setTimeout(() => { lastBarcode = ''; }, 3000);
+    setTimeout(() => { lastBarcode = ''; }, 4000);
+
+    // 4. Stop camera immediately after confirmed scan
+    stopCamera();
+
+    // 5. Process the barcode
     processBarcode(code);
   });
 }
