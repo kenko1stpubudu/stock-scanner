@@ -1257,8 +1257,34 @@ function processManual() {
   document.getElementById('manual-barcode').value = '';
 }
 
+// ── Barcode Normalization & Smart Matching ──
+function normalizeBarcode(code) {
+  // Strip leading zeros, trim whitespace — handles EAN/UPC format differences
+  return String(code).trim().replace(/^0+/, '') || '0';
+}
+
+function findInCatalog(raw) {
+  const norm = normalizeBarcode(raw);
+
+  // 1. Exact string match
+  let hit = CATALOG.find(p => p.barcode === raw);
+  if (hit) return hit;
+
+  // 2. Leading-zeros-stripped match (e.g. "0000026" vs "26")
+  hit = CATALOG.find(p => normalizeBarcode(p.barcode) === norm);
+  if (hit) return hit;
+
+  // 3. Suffix match — EAN-13 wraps UPC-A with a leading country digit
+  //    e.g. catalog "04890008100309" vs scanned "4890008100309"
+  hit = CATALOG.find(p => {
+    const cn = normalizeBarcode(p.barcode);
+    return norm.endsWith(cn) || cn.endsWith(norm);
+  });
+  return hit || null;
+}
+
 function processBarcode(code) {
-  const product = CATALOG.find(p => p.barcode === code);
+  const product = findInCatalog(code);
   hideResultCards();
 
   if (product) {
