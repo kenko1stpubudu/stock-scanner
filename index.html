@@ -101,12 +101,16 @@
     width: 100%; height: 100%;
     position: absolute; inset: 0;
   }
-  #zxing-video {
+  /* html5-qrcode injects video/canvas inside #scanner-container */
+  #scanner-container video {
     width: 100% !important;
     height: 100% !important;
-    object-fit: cover;
-    display: block;
+    object-fit: cover !important;
+    position: absolute !important;
+    inset: 0 !important;
   }
+  #scanner-container canvas { display: none !important; }
+  #scanner-container img { display: none !important; }
 
   .scan-overlay {
     position: absolute; inset: 0;
@@ -634,7 +638,6 @@
   <div class="scan-area">
     <div class="scan-viewport">
       <div id="scanner-container">
-        <video id="zxing-video" autoplay muted playsinline style="display:none"></video>
         <div class="scan-placeholder" id="scan-placeholder">
           <div class="icon">📷</div>
           <div>Camera start කරන්න</div>
@@ -1141,7 +1144,6 @@ let lastBarcode = '';
 let currentScanned = null;
 let cameraActive  = false;
 let toastTimer;
-let zxingReader = null;
 
 // ═══ TABS ═══
 function switchTab(tab) {
@@ -1152,16 +1154,16 @@ function switchTab(tab) {
   if (tab === 'export') renderPreview();
 }
 
-// ═══ CAMERA / SCANNER (ZXing) ═══
+// ═══ CAMERA / SCANNER (html5-qrcode — mobile optimised) ═══
+let html5QrScanner = null;
+
 function toggleCamera() {
   cameraActive ? stopCamera() : startCamera();
 }
 
 async function startCamera() {
-  // ZXing library namespace check
-  const ZXing = window.ZXingBrowser || window.ZXing;
-  if (!ZXing || !ZXing.BrowserMultiFormatReader) {
-    showToast('❌ Scanner library load නොවිය — page reload කරන්න', 'error');
+  if (typeof Html5Qrcode === 'undefined') {
+    showToast('❌ Scanner library load නොවිය — reload කරන්න', 'error');
     return;
   }
 
@@ -1172,89 +1174,74 @@ async function startCamera() {
   document.getElementById('btn-camera').textContent = '⏹ Camera Off';
   document.getElementById('btn-camera').className = 'btn-scan stop';
 
-  const videoEl = document.getElementById('zxing-video');
-  videoEl.style.display = 'block';
-
   try {
-    const hints = new Map();
-    const formats = [
-      ZXing.BarcodeFormat.EAN_13,
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.UPC_A,
-      ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.ITF,
-      ZXing.BarcodeFormat.DATA_MATRIX,
-      ZXing.BarcodeFormat.QR_CODE,
-    ];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    html5QrScanner = new Html5Qrcode('scanner-container', { verbose: false });
 
-    zxingReader = new ZXing.BrowserMultiFormatReader(hints, {
-      delayBetweenScanAttempts: 100,
-      delayBetweenScanSuccess: 1500,
-    });
+    const config = {
+      fps: 15,
+      qrbox: { width: 260, height: 90 },
+      aspectRatio: 1.7,
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.QR_CODE,
+      ],
+    };
 
-    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-    // prefer back camera
-    const backCam = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
-    const deviceId = backCam ? backCam.deviceId : undefined;
+    await html5QrScanner.start(
+      { facingMode: 'environment' },   // back camera
+      config,
+      (decodedText) => {
+        // success callback
+        if (!decodedText) return;
+        if (decodedText === lastBarcode) return;  // duplicate guard
+        lastBarcode = decodedText;
+        setTimeout(() => { lastBarcode = ''; }, 4000);
+
+        navigator.vibrate && navigator.vibrate(60);
+        stopCamera();
+        processBarcode(decodedText);
+      },
+      () => {}  // per-frame error — ignore silently
+    );
 
     cameraActive = true;
     document.getElementById('scan-status').textContent = 'Scanning...';
 
-    await zxingReader.decodeFromVideoDevice(deviceId, videoEl, (result, err) => {
-      if (!result) return;
-      const code = result.getText();
-      if (!code) return;
-
-      // Duplicate guard — same code within 4s ignored
-      if (code === lastBarcode) return;
-      lastBarcode = code;
-      setTimeout(() => { lastBarcode = ''; }, 4000);
-
-      // Haptic feedback
-      navigator.vibrate && navigator.vibrate(60);
-
-      stopCamera();
-      processBarcode(code);
-    });
-
   } catch (err) {
-    showToast('Camera error: ' + (err.message || err), 'error');
+    const msg = err && err.message ? err.message : String(err);
+    // User denied camera permission
+    if (/denied|permission/i.test(msg)) {
+      showToast('📷 Camera permission allow කරන්න', 'error');
+    } else {
+      showToast('Camera error: ' + msg, 'error');
+    }
     stopCamera();
   }
 }
 
-function stopCamera() {
-  if (zxingReader) {
-    try { zxingReader.reset(); } catch(e) {}
-    zxingReader = null;
+async function stopCamera() {
+  if (html5QrScanner) {
+    try {
+      if (html5QrScanner.isScanning) {
+        await html5QrScanner.stop();
+      }
+      html5QrScanner.clear();
+    } catch(e) {}
+    html5QrScanner = null;
   }
   cameraActive = false;
-  const videoEl = document.getElementById('zxing-video');
-  if (videoEl) {
-    videoEl.style.display = 'none';
-    if (videoEl.srcObject) {
-      videoEl.srcObject.getTracks().forEach(t => t.stop());
-      videoEl.srcObject = null;
-    }
-  }
   document.getElementById('scan-placeholder').style.display = 'flex';
   document.getElementById('scan-overlay').style.display = 'none';
   document.getElementById('scan-status').textContent = 'Camera off';
   document.getElementById('scan-status').className = 'scan-status';
   document.getElementById('btn-camera').textContent = '📷 Camera On';
   document.getElementById('btn-camera').className = 'btn-scan';
-}
-
-// ═══ BARCODE PROCESSING ═══
-function processManual() {
-  const code = document.getElementById('manual-barcode').value.trim();
-  if (!code) { showToast('Barcode ඇතුළු කරන්න', 'error'); return; }
-  processBarcode(code);
-  document.getElementById('manual-barcode').value = '';
 }
 
 // ── Barcode Normalization & Smart Matching ──
