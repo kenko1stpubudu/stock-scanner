@@ -76,8 +76,8 @@
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
   /* ── PAGES ── */
-  .page { display: none; flex: 1; overflow-y: auto; padding: 16px; }
-  .page.active { display: flex; flex-direction: column; gap: 14px; }
+  .page { display: none; flex: 1; overflow-y: auto; padding: 12px; }
+  .page.active { display: flex; flex-direction: column; gap: 10px; }
 
   /* ── SCANNER PAGE ── */
   .scan-area {
@@ -89,7 +89,7 @@
   }
   .scan-viewport {
     width: 100%;
-    aspect-ratio: 4/3;
+    height: 200px;
     background: #000;
     position: relative;
     display: flex;
@@ -114,7 +114,7 @@
     pointer-events: none; z-index: 5;
   }
   .scan-frame {
-    width: 65%; aspect-ratio: 3/1;
+    width: 70%; height: 70px;
     border: 2px solid var(--accent);
     border-radius: 8px;
     position: relative;
@@ -125,7 +125,7 @@
     left: 4px; right: 4px; top: 50%;
     height: 2px;
     background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    animation: scanAnim 2s ease-in-out infinite;
+    animation: scanAnim 1.6s ease-in-out infinite;
   }
   @keyframes scanAnim {
     0%,100% { top: 15%; opacity: 0.6; }
@@ -134,16 +134,16 @@
   .scan-placeholder {
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    gap: 10px; color: var(--muted); font-size: 13px;
+    gap: 6px; color: var(--muted); font-size: 12px;
     height: 100%;
   }
-  .scan-placeholder .icon { font-size: 42px; }
+  .scan-placeholder .icon { font-size: 28px; }
 
   .scan-info {
-    padding: 14px 16px;
+    padding: 9px 14px;
     display: flex; align-items: center; justify-content: space-between;
   }
-  .scan-status { font-size: 13px; color: var(--muted); }
+  .scan-status { font-size: 12px; color: var(--muted); }
   .scan-status.active { color: var(--accent); }
   .scan-status.found  { color: var(--green); font-weight: 700; }
   .scan-status.error  { color: var(--red); }
@@ -152,13 +152,13 @@
     background: var(--accent);
     color: #000;
     border: none;
-    border-radius: 12px;
-    padding: 12px 22px;
-    font-size: 14px;
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 13px;
     font-weight: 800;
     cursor: pointer;
     transition: opacity 0.2s, transform 0.15s;
-    display: flex; align-items: center; gap: 7px;
+    display: flex; align-items: center; gap: 6px;
   }
   .btn-scan:active { transform: scale(0.97); opacity: 0.85; }
   .btn-scan.stop { background: var(--red); color: white; }
@@ -166,46 +166,46 @@
   /* ── RESULT CARD ── */
   .result-card {
     background: var(--card);
-    border-radius: 16px;
+    border-radius: 14px;
     border: 1px solid var(--border);
-    padding: 16px;
+    padding: 12px;
     display: none;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
   }
   .result-card.show { display: flex; }
 
   .result-product {
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; gap: 10px;
   }
   .result-icon {
-    width: 52px; height: 52px;
-    border-radius: 14px;
+    width: 42px; height: 42px;
+    border-radius: 12px;
     background: linear-gradient(135deg, var(--accent2), var(--accent));
     display: flex; align-items: center; justify-content: center;
-    font-size: 24px; flex-shrink: 0;
+    font-size: 20px; flex-shrink: 0;
   }
-  .result-name { font-size: 16px; font-weight: 800; }
-  .result-barcode { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: monospace; }
-  .result-category { font-size: 11px; color: var(--accent2); font-weight: 700; margin-top: 3px; }
+  .result-name { font-size: 14px; font-weight: 800; }
+  .result-barcode { font-size: 10px; color: var(--muted); margin-top: 1px; font-family: monospace; }
+  .result-category { font-size: 10px; color: var(--accent2); font-weight: 700; margin-top: 2px; }
 
   .stock-control {
     background: var(--bg);
-    border-radius: 12px;
-    padding: 14px;
+    border-radius: 10px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
-  .stock-label { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stock-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
   .stock-row {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 8px;
   }
   .qty-btn {
-    width: 40px; height: 40px;
-    border-radius: 10px;
+    width: 36px; height: 36px;
+    border-radius: 9px;
     border: none;
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 800;
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
@@ -219,17 +219,17 @@
     flex: 1;
     background: var(--card);
     border: 1.5px solid var(--border);
-    border-radius: 10px;
+    border-radius: 9px;
     color: var(--text);
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 800;
     text-align: center;
-    padding: 8px;
+    padding: 6px;
     font-family: 'Syne', sans-serif;
   }
   .qty-input:focus { outline: none; border-color: var(--accent); }
   .unit-label {
-    font-size: 13px; color: var(--muted);
+    font-size: 12px; color: var(--muted);
     flex-shrink: 0; font-weight: 600;
   }
 
@@ -237,9 +237,9 @@
     background: linear-gradient(135deg, var(--accent2), var(--accent));
     color: #000;
     border: none;
-    border-radius: 12px;
-    padding: 13px;
-    font-size: 14px;
+    border-radius: 11px;
+    padding: 11px;
+    font-size: 13px;
     font-weight: 800;
     cursor: pointer;
     width: 100%;
@@ -276,15 +276,42 @@
   }
   .btn-manual:active { opacity: 0.8; }
 
+  .btn-browse {
+    width: 100%;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 700;
+    padding: 13px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: border-color 0.2s, background 0.2s;
+    font-family: 'Syne', 'Noto Sans Sinhala', sans-serif;
+  }
+  .btn-browse:active { border-color: var(--accent2); background: rgba(124,106,255,0.08); }
+  .browse-count {
+    margin-left: auto;
+    background: var(--accent2);
+    color: white;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
   /* ── NOT FOUND ── */
   .not-found-card {
     background: #1a0d10;
     border: 1px solid #3d1520;
-    border-radius: 14px;
-    padding: 16px;
+    border-radius: 12px;
+    padding: 12px;
     display: none;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
   }
   .not-found-card.show { display: flex; }
   .not-found-title { color: var(--red); font-weight: 800; font-size: 14px; }
@@ -500,18 +527,18 @@
   .items-sheet {
     background: var(--surface);
     border-radius: 22px 22px 0 0;
-    width: 100%; max-height: 75vh;
-    overflow-y: auto;
-    padding: 0 0 24px;
+    width: 100%; max-height: 88vh;
+    display: flex; flex-direction: column;
     animation: slideUp 0.25s ease;
+    overflow: hidden;
   }
   @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   .sheet-header {
-    position: sticky; top: 0;
     background: var(--surface);
     padding: 16px 18px 12px;
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
   }
   .sheet-title { font-size: 15px; font-weight: 800; }
   .sheet-close {
@@ -520,20 +547,72 @@
     font-size: 15px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
   }
+  .sheet-search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sheet-search input {
+    flex: 1; background: none; border: none;
+    color: var(--text); font-size: 14px;
+    font-family: 'Syne','Noto Sans Sinhala',sans-serif;
+  }
+  .sheet-search input:focus { outline: none; }
+  .cat-filter-row {
+    display: flex; gap: 6px; padding: 8px 14px;
+    overflow-x: auto; flex-shrink: 0;
+    scrollbar-width: none;
+  }
+  .cat-filter-row::-webkit-scrollbar { display: none; }
+  .cat-pill {
+    background: var(--card); border: 1.5px solid var(--border);
+    color: var(--muted); font-size: 11px; font-weight: 700;
+    padding: 5px 12px; border-radius: 20px;
+    white-space: nowrap; cursor: pointer;
+    transition: all 0.15s; flex-shrink: 0;
+    font-family: 'Syne', sans-serif;
+  }
+  .cat-pill.active { background: var(--accent2); border-color: var(--accent2); color: white; }
+  #catalog-list { overflow-y: auto; flex: 1; }
   .catalog-item {
-    padding: 12px 18px;
+    padding: 11px 18px;
     display: flex; align-items: center; gap: 12px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     transition: background 0.15s;
   }
+  .catalog-item.active-select { background: rgba(124,106,255,0.12); border-left: 3px solid var(--accent2); }
   .catalog-item:active { background: rgba(255,255,255,0.04); }
-  .cat-icon { font-size: 22px; width: 36px; text-align: center; }
-  .cat-info { flex: 1; }
-  .cat-name { font-size: 14px; font-weight: 700; }
-  .cat-code { font-size: 11px; color: var(--muted); font-family: monospace; }
-  .cat-check { color: var(--accent); font-size: 16px; display: none; }
-  .catalog-item.selected .cat-check { display: block; }
+  .cat-icon { font-size: 22px; width: 36px; text-align: center; flex-shrink:0; }
+  .cat-info { flex: 1; min-width:0; }
+  .cat-name { font-size: 13px; font-weight: 700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cat-code { font-size: 10px; color: var(--muted); font-family: monospace; margin-top:1px; }
+  .cat-catbadge { font-size: 10px; color: var(--accent2); font-weight:700; margin-top:2px; }
+  .cat-stocked { font-size: 11px; color: var(--accent); font-weight:800; flex-shrink:0; }
+
+  /* qty bottom bar inside modal */
+  .sheet-qty-bar {
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+    flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 10px;
+    animation: slideUp 0.2s ease;
+  }
+  .sqb-name { font-size: 13px; font-weight: 800; color: var(--accent2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sqb-controls { display: flex; gap: 10px; align-items: center; }
+  .sqb-input { flex:1; }
+  .sqb-add {
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    color: #000; border: none; border-radius: 12px;
+    padding: 12px; font-weight: 800; font-size: 14px;
+    cursor: pointer; width: 100%;
+    font-family: 'Syne','Noto Sans Sinhala',sans-serif;
+  }
+  .sqb-add:active { opacity: 0.85; }
+
 </style>
 </head>
 <body>
@@ -575,7 +654,11 @@
     <button class="btn-manual" onclick="processManual()">Search</button>
   </div>
 
-  <div class="result-card" id="result-card">
+  <button class="btn-browse" onclick="openCatalog()">
+    📋 <span>Catalog Browse කරන්න</span>
+    <span class="browse-count" id="browse-count">25 items</span>
+  </button>
+
     <div class="result-product">
       <div class="result-icon" id="res-icon">📦</div>
       <div>
@@ -654,10 +737,24 @@
 <div class="items-modal" id="items-modal" onclick="handleModalClick(event)">
   <div class="items-sheet">
     <div class="sheet-header">
-      <div class="sheet-title">🔍 Item තෝරන්න</div>
+      <div class="sheet-title">📋 Catalog</div>
       <button class="sheet-close" onclick="closeModal()">✕</button>
     </div>
+    <div class="sheet-search">
+      <span>🔍</span>
+      <input id="catalog-search" placeholder="Item search කරන්න..." oninput="renderCatalog()" autocomplete="off">
+    </div>
+    <div class="cat-filter-row" id="cat-filter-row"></div>
     <div id="catalog-list"></div>
+    <div class="sheet-qty-bar" id="sheet-qty-bar" style="display:none">
+      <div class="sqb-name" id="sqb-name">–</div>
+      <div class="sqb-controls">
+        <button class="qty-btn minus" onclick="sqbAdjust(-1)">−</button>
+        <input class="qty-input sqb-input" id="sqb-qty" type="number" value="1" min="0" inputmode="numeric">
+        <button class="qty-btn plus" onclick="sqbAdjust(1)">+</button>
+      </div>
+      <button class="sqb-add" onclick="sqbAdd()">✅ Add කරන්න</button>
+    </div>
   </div>
 </div>
 
@@ -759,7 +856,7 @@ function startCamera() {
 
   // Confidence-based confirmation: same code must appear 3x with high confidence
   const confirmBuffer = {};
-  const CONFIRM_NEEDED = 3;       // consecutive frames needed
+  const CONFIRM_NEEDED = 2;       // consecutive frames needed
   const MIN_CONFIDENCE = 0.85;    // minimum per-character confidence
 
   Quagga.offDetected();
@@ -1032,27 +1129,106 @@ function clearAll() {
 }
 
 // ═══ CATALOG MODAL ═══
-function openCatalog(preBarcode) {
-  const list = document.getElementById('catalog-list');
-  list.innerHTML = CATALOG.map(p => `
-    <div class="catalog-item ${stockData[p.barcode] ? 'selected' : ''}" onclick="selectFromCatalog('${p.barcode}')">
-      <div class="cat-icon">${p.icon}</div>
-      <div class="cat-info">
-        <div class="cat-name">${p.name}</div>
-        <div class="cat-code">${p.barcode}</div>
-      </div>
-      <div class="cat-check">✓</div>
-    </div>
-  `).join('');
+let activeCatFilter = 'All';
+let sqbSelected = null;
+
+function openCatalog() {
+  document.getElementById('catalog-search').value = '';
+  activeCatFilter = 'All';
+  sqbSelected = null;
+  document.getElementById('sheet-qty-bar').style.display = 'none';
+
+  const cats = ['All', ...new Set(CATALOG.map(p => p.category))];
+  document.getElementById('cat-filter-row').innerHTML = cats.map(c =>
+    `<div class="cat-pill ${c === 'All' ? 'active' : ''}" onclick="setCatFilter('${c}',this)">${c}</div>`
+  ).join('');
+
+  renderCatalog();
   document.getElementById('items-modal').classList.add('open');
+  setTimeout(() => document.getElementById('catalog-search').focus(), 300);
 }
 
-function selectFromCatalog(barcode) {
-  closeModal();
-  processBarcode(barcode);
+function setCatFilter(cat, el) {
+  activeCatFilter = cat;
+  document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  renderCatalog();
 }
 
-function closeModal() { document.getElementById('items-modal').classList.remove('open'); }
+function renderCatalog() {
+  const q = (document.getElementById('catalog-search').value || '').toLowerCase();
+  const list = document.getElementById('catalog-list');
+
+  const filtered = CATALOG.filter(p => {
+    const matchCat = activeCatFilter === 'All' || p.category === activeCatFilter;
+    const matchQ   = !q || p.name.toLowerCase().includes(q) || p.barcode.includes(q);
+    return matchCat && matchQ;
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Results නැත</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(p => {
+    const stocked = stockData[p.barcode];
+    const isActive = sqbSelected && sqbSelected.barcode === p.barcode;
+    return `
+      <div class="catalog-item ${isActive ? 'active-select' : ''}" onclick="selectCatalogItem('${p.barcode}')">
+        <div class="cat-icon">${p.icon}</div>
+        <div class="cat-info">
+          <div class="cat-name">${p.name}</div>
+          <div class="cat-code">${p.barcode}</div>
+          <div class="cat-catbadge">${p.category}</div>
+        </div>
+        ${stocked ? `<div class="cat-stocked">✓ ${stocked.qty}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function selectCatalogItem(barcode) {
+  const product = CATALOG.find(p => p.barcode === barcode);
+  if (!product) return;
+  sqbSelected = { ...product };
+
+  const bar = document.getElementById('sheet-qty-bar');
+  bar.style.display = 'flex';
+  document.getElementById('sqb-name').textContent = product.icon + ' ' + product.name;
+  const existing = stockData[barcode];
+  document.getElementById('sqb-qty').value = existing ? existing.qty : 1;
+
+  renderCatalog();
+  bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function sqbAdjust(delta) {
+  const inp = document.getElementById('sqb-qty');
+  inp.value = Math.max(0, parseInt(inp.value || 0) + delta);
+}
+
+function sqbAdd() {
+  if (!sqbSelected) return;
+  const qty = parseInt(document.getElementById('sqb-qty').value) || 0;
+  const key = sqbSelected.barcode;
+
+  stockData[key] = {
+    ...sqbSelected,
+    qty,
+    lastScan: new Date().toLocaleString('si-LK')
+  };
+
+  updateBadge();
+  showToast('✅ ' + sqbSelected.name + ' — Qty: ' + qty, 'success');
+
+  sqbSelected = null;
+  document.getElementById('sheet-qty-bar').style.display = 'none';
+  renderCatalog();
+}
+
+function closeModal() {
+  document.getElementById('items-modal').classList.remove('open');
+  sqbSelected = null;
+}
 function handleModalClick(e) { if (e.target === document.getElementById('items-modal')) closeModal(); }
 
 // ═══ UTILS ═══
@@ -1074,12 +1250,7 @@ document.getElementById('manual-barcode').addEventListener('keydown', e => {
   if (e.key === 'Enter') processManual();
 });
 
-// Catalog shortcut — long press scan button
-let pressTimer;
-document.getElementById('btn-camera').addEventListener('touchstart', () => {
-  pressTimer = setTimeout(() => { stopCamera(); openCatalog(); }, 800);
-});
-document.getElementById('btn-camera').addEventListener('touchend', () => clearTimeout(pressTimer));
+
 </script>
 </body>
 </html>
