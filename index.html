@@ -763,11 +763,23 @@
     <div id="catalog-list"></div>
     <div class="sheet-qty-bar" id="sheet-qty-bar" style="display:none">
       <div class="sqb-name" id="sqb-name">–</div>
-      <div class="sqb-controls">
+      <!-- pcs row -->
+      <div class="sqb-controls" id="sqb-row-pcs">
         <button class="qty-btn minus" onclick="sqbAdjust(-1)">−</button>
         <input class="qty-input sqb-input" id="sqb-qty" type="number" value="1" min="0" inputmode="numeric">
         <button class="qty-btn plus" onclick="sqbAdjust(1)">+</button>
       </div>
+      <!-- kg/g row -->
+      <div class="sqb-controls" id="sqb-row-kg" style="display:none;flex-wrap:wrap;gap:6px;">
+        <input class="qty-input" id="sqb-kg" type="number" value="0" min="0" step="0.001"
+               inputmode="decimal" placeholder="kg" style="width:65px" oninput="sqbUpdateKg()">
+        <span class="unit-label" style="align-self:center">kg</span>
+        <span style="align-self:center;color:var(--muted)">+</span>
+        <input class="qty-input" id="sqb-g" type="number" value="0" min="0" max="999" step="1"
+               inputmode="numeric" placeholder="g" style="width:55px" oninput="sqbCarryG()">
+        <span class="unit-label" style="align-self:center">g</span>
+      </div>
+      <div id="sqb-kg-display" style="display:none;font-size:11px;color:var(--muted);text-align:center;width:100%"></div>
       <button class="sqb-add" onclick="sqbAdd()">✅ Add කරන්න</button>
     </div>
   </div>
@@ -1636,14 +1648,48 @@ function selectCatalogItem(barcode) {
   if (!product) return;
   sqbSelected = { ...product };
 
-  const bar = document.getElementById('sheet-qty-bar');
+  const bar    = document.getElementById('sheet-qty-bar');
+  const isKg   = product.unit === 'kg';
+  const existing = stockData[barcode];
+
   bar.style.display = 'flex';
   document.getElementById('sqb-name').textContent = product.icon + ' ' + product.name;
-  const existing = stockData[barcode];
-  document.getElementById('sqb-qty').value = existing ? existing.qty : 1;
+
+  // Toggle rows
+  document.getElementById('sqb-row-pcs').style.display    = isKg ? 'none' : 'flex';
+  document.getElementById('sqb-row-kg').style.display     = isKg ? 'flex' : 'none';
+  document.getElementById('sqb-kg-display').style.display = isKg ? 'block' : 'none';
+
+  if (isKg) {
+    const existKg = existing ? existing.qty : 0;
+    document.getElementById('sqb-kg').value = Math.floor(existKg) || 0;
+    document.getElementById('sqb-g').value  = Math.round((existKg % 1) * 1000) || 0;
+    sqbUpdateKg();
+  } else {
+    document.getElementById('sqb-qty').value = existing ? existing.qty : 1;
+  }
 
   renderCatalog();
   bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function sqbUpdateKg() {
+  const kg = parseFloat(document.getElementById('sqb-kg').value) || 0;
+  const g  = parseFloat(document.getElementById('sqb-g').value)  || 0;
+  const total = kg + g / 1000;
+  document.getElementById('sqb-kg-display').textContent =
+    'මුළු: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
+}
+
+function sqbCarryG() {
+  let g = parseFloat(document.getElementById('sqb-g').value) || 0;
+  if (g >= 1000) {
+    const carry = Math.floor(g / 1000);
+    document.getElementById('sqb-kg').value =
+      (parseFloat(document.getElementById('sqb-kg').value) || 0) + carry;
+    document.getElementById('sqb-g').value = g % 1000;
+  }
+  sqbUpdateKg();
 }
 
 function sqbAdjust(delta) {
@@ -1653,7 +1699,15 @@ function sqbAdjust(delta) {
 
 function sqbAdd() {
   if (!sqbSelected) return;
-  const qty = parseInt(document.getElementById('sqb-qty').value) || 0;
+  const isKg = sqbSelected.unit === 'kg';
+  let qty;
+  if (isKg) {
+    const kg = parseFloat(document.getElementById('sqb-kg').value) || 0;
+    const g  = parseFloat(document.getElementById('sqb-g').value)  || 0;
+    qty = parseFloat((kg + g / 1000).toFixed(3));
+  } else {
+    qty = parseInt(document.getElementById('sqb-qty').value) || 0;
+  }
   const key = sqbSelected.barcode;
 
   stockData[key] = {
@@ -1663,7 +1717,11 @@ function sqbAdd() {
   };
 
   updateBadge();
-  showToast('✅ ' + sqbSelected.name + ' — Qty: ' + qty, 'success');
+  renderStock();
+  const qtyDisplay = isKg
+    ? qty.toFixed(3) + ' kg (' + (qty * 1000).toFixed(0) + ' g)'
+    : qty + ' ' + (sqbSelected.unit || 'pcs');
+  showToast('✅ ' + sqbSelected.name + ' — ' + qtyDisplay, 'success');
 
   sqbSelected = null;
   document.getElementById('sheet-qty-bar').style.display = 'none';
