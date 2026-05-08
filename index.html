@@ -89,7 +89,7 @@
   }
   .scan-viewport {
     width: 100%;
-    height: 200px;
+    height: 240px;
     background: #000;
     position: relative;
     display: flex;
@@ -100,12 +100,28 @@
   #scanner-container {
     width: 100%; height: 100%;
     position: absolute; inset: 0;
+    overflow: hidden;
   }
+
+  /* Quagga2 injects video + canvas — force them to fill container */
+  #scanner-container video {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block !important;
+    z-index: 1;
+  }
+  #scanner-container canvas {
+    display: none !important;
+  }
+
 
   .scan-overlay {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    pointer-events: none; z-index: 5;
+    pointer-events: none; z-index: 10;
   }
   .scan-frame {
     width: 70%; height: 70px;
@@ -130,6 +146,8 @@
     align-items: center; justify-content: center;
     gap: 6px; color: var(--muted); font-size: 12px;
     height: 100%;
+    position: relative;
+    z-index: 2;
   }
   .scan-placeholder .icon { font-size: 28px; }
 
@@ -1213,13 +1231,12 @@ function startCamera() {
     cameraActive = true;
     document.getElementById('scan-status').textContent = 'Scanning... 📷';
 
-    // Hide Quagga canvas overlays — we have our own UI
-    document.querySelectorAll('#scanner-container canvas').forEach(c => {
-      c.style.display = 'none';
+    // Quagga injects video — wait one frame then hide canvases
+    requestAnimationFrame(() => {
+      document.querySelectorAll('#scanner-container canvas').forEach(c => {
+        c.style.display = 'none';
+      });
     });
-    // Show video
-    const v = document.querySelector('#scanner-container video');
-    if (v) { v.style.cssText = 'width:100%!important;height:100%!important;object-fit:cover;position:absolute;inset:0;'; }
   });
 
   // Detect with confirmation buffer
