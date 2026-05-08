@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Stock Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quagga2@0.7.4/dist/quagga.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap');
 
@@ -99,14 +100,6 @@
   #scanner-container {
     width: 100%; height: 100%;
     position: absolute; inset: 0;
-  }
-  #scan-video {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: cover;
-    display: none;
-    position: absolute;
-    inset: 0;
   }
 
   .scan-overlay {
@@ -635,7 +628,7 @@
   <div class="scan-area">
     <div class="scan-viewport">
       <div id="scanner-container">
-        <video id="scan-video" autoplay muted playsinline playsinline></video>
+        
         <div class="scan-placeholder" id="scan-placeholder">
           <div class="icon">📷</div>
           <div>Camera start කරන්න</div>
@@ -1152,135 +1145,127 @@ function switchTab(tab) {
   if (tab === 'export') renderPreview();
 }
 
-// ═══ CAMERA / SCANNER — Zero-library, native BarcodeDetector ═══
-let scanStream   = null;   // MediaStream
-let scanAnimId   = null;   // requestAnimationFrame id
-let scanCanvas   = null;   // offscreen canvas for BarcodeDetector
-let scanCtx      = null;
-
+// ═══ CAMERA / SCANNER (Quagga2) ═══
 function toggleCamera() {
   cameraActive ? stopCamera() : startCamera();
 }
 
-async function startCamera() {
-  // ── UI: starting state ──
+function startCamera() {
   document.getElementById('scan-placeholder').style.display = 'none';
-  document.getElementById('scan-overlay').style.display    = 'flex';
-  document.getElementById('scan-status').textContent       = 'Camera starting...';
-  document.getElementById('scan-status').className         = 'scan-status active';
-  document.getElementById('btn-camera').textContent        = '⏹ Camera Off';
-  document.getElementById('btn-camera').className          = 'btn-scan stop';
+  document.getElementById('scan-overlay').style.display = 'flex';
+  document.getElementById('scan-status').textContent = 'Camera starting...';
+  document.getElementById('scan-status').className = 'scan-status active';
+  document.getElementById('btn-camera').textContent = '⏹ Camera Off';
+  document.getElementById('btn-camera').className = 'btn-scan stop';
 
-  const videoEl = document.getElementById('scan-video');
+  // Remove previous canvas if any
+  const old = document.getElementById('scanner-container').querySelector('canvas');
+  if (old) old.remove();
 
-  try {
-    // ── Request back camera ──
-    scanStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width:  { ideal: 1280 },
-        height: { ideal: 720 }
+  Quagga.init({
+    inputStream: {
+      name: 'Live',
+      type: 'LiveStream',
+      target: document.getElementById('scanner-container'),
+      constraints: {
+        width:  { min: 640, ideal: 1280, max: 1920 },
+        height: { min: 480, ideal: 720,  max: 1080 },
+        facingMode: 'environment',
+        aspectRatio: { ideal: 1 },
       },
-      audio: false
-    });
-
-    videoEl.srcObject = scanStream;
-    videoEl.style.display = 'block';
-    await videoEl.play();
-
+      area: {
+        top:    '20%',
+        right:  '10%',
+        left:   '10%',
+        bottom: '20%',
+      },
+    },
+    locator: {
+      patchSize: 'medium',
+      halfSample: true,
+    },
+    numOfWorkers: navigator.hardwareConcurrency > 2 ? 2 : 1,
+    frequency: 15,
+    decoder: {
+      readers: [
+        'ean_reader',
+        'ean_8_reader',
+        'code_128_reader',
+        'upc_reader',
+        'upc_e_reader',
+        'code_39_reader',
+        'code_93_reader',
+        'codabar_reader',
+        'i2of5_reader',
+      ],
+      debug: { drawBoundingBox: false, showFrequency: false, drawScanline: false, showPattern: false },
+      multiple: false,
+    },
+    locate: true,
+  }, err => {
+    if (err) {
+      console.error('Quagga init error:', err);
+      showToast('Camera error — HTTPS or permission needed', 'error');
+      stopCamera();
+      return;
+    }
+    Quagga.start();
     cameraActive = true;
-    document.getElementById('scan-status').textContent = 'Scanning...';
+    document.getElementById('scan-status').textContent = 'Scanning... 📷';
 
-    // ── Choose decode engine ──
-    if ('BarcodeDetector' in window) {
-      // Native BarcodeDetector (Android Chrome 83+, iOS Safari 17+)
-      const detector = new BarcodeDetector({
-        formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf','qr_code','data_matrix']
-      });
-      scanCanvas = document.createElement('canvas');
-      scanCtx    = scanCanvas.getContext('2d');
+    // Hide Quagga canvas overlays — we have our own UI
+    document.querySelectorAll('#scanner-container canvas').forEach(c => {
+      c.style.display = 'none';
+    });
+    // Show video
+    const v = document.querySelector('#scanner-container video');
+    if (v) { v.style.cssText = 'width:100%!important;height:100%!important;object-fit:cover;position:absolute;inset:0;'; }
+  });
 
-      const tick = async () => {
-        if (!cameraActive) return;
-        if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
-          try {
-            const barcodes = await detector.detect(videoEl);
-            if (barcodes.length > 0) {
-              const code = barcodes[0].rawValue;
-              if (code && code !== lastBarcode) {
-                lastBarcode = code;
-                setTimeout(() => { lastBarcode = ''; }, 4000);
-                navigator.vibrate && navigator.vibrate(60);
-                stopCamera();
-                processBarcode(code);
-                return;
-              }
-            }
-          } catch(e) {}
-        }
-        scanAnimId = requestAnimationFrame(tick);
-      };
-      scanAnimId = requestAnimationFrame(tick);
+  // Detect with confirmation buffer
+  Quagga.offDetected();
+  const confirmBuf = {};
+  const NEED = 2; // 2 consecutive same-code frames
 
-    } else {
-      // ── Fallback: jscanify-style canvas pixel decode via Dynamsoft-free approach ──
-      // Load zxing-js/browser (ESM-compatible slim build via skypack)
-      showToast('Loading scanner engine...', 'info');
-      const mod = await import('https://cdn.skypack.dev/@zxing/browser@3.0.3');
-      const { BrowserMultiFormatReader } = mod;
-      const reader = new BrowserMultiFormatReader();
-      window._fallbackReader = reader;
-      await reader.decodeFromVideoElement(videoEl, (result, err) => {
-        if (!result) return;
-        const code = result.getText();
-        if (!code || code === lastBarcode) return;
-        lastBarcode = code;
-        setTimeout(() => { lastBarcode = ''; }, 4000);
-        navigator.vibrate && navigator.vibrate(60);
-        stopCamera();
-        processBarcode(code);
-      });
+  Quagga.onDetected(data => {
+    const code = data.codeResult.code;
+    if (!code || code.length < 4) return;
+
+    // confidence check — sum of errors
+    const codes = data.codeResult.decodedCodes || [];
+    const errors = codes.filter(c => c.error != null).map(c => c.error);
+    if (errors.length) {
+      const avgErr = errors.reduce((a, b) => a + b, 0) / errors.length;
+      if (avgErr > 0.28) return; // reject low-confidence
     }
 
-  } catch (err) {
-    const msg = String(err.message || err);
-    if (/denied|permission|notallowed/i.test(msg)) {
-      showToast('📷 Camera permission allow කරන්න (browser settings)', 'error');
-    } else if (/notfound|devices/i.test(msg)) {
-      showToast('📷 Camera හොයා ගත නොහැකි විය', 'error');
-    } else {
-      showToast('Camera error: ' + msg.slice(0,60), 'error');
-    }
+    confirmBuf[code] = (confirmBuf[code] || 0) + 1;
+    Object.keys(confirmBuf).forEach(k => { if (k !== code) delete confirmBuf[k]; });
+    if (confirmBuf[code] < NEED) return;
+
+    if (code === lastBarcode) return;
+    lastBarcode = code;
+    setTimeout(() => { lastBarcode = ''; }, 3500);
+
+    navigator.vibrate && navigator.vibrate([60]);
     stopCamera();
-  }
+    processBarcode(code);
+  });
 }
 
 function stopCamera() {
-  // Stop rAF loop
-  if (scanAnimId) { cancelAnimationFrame(scanAnimId); scanAnimId = null; }
-
-  // Stop fallback ZXing reader
-  if (window._fallbackReader) {
-    try { window._fallbackReader.reset(); } catch(e) {}
-    window._fallbackReader = null;
-  }
-
-  // Stop MediaStream tracks
-  if (scanStream) {
-    scanStream.getTracks().forEach(t => t.stop());
-    scanStream = null;
-  }
-
-  const videoEl = document.getElementById('scan-video');
-  if (videoEl) { videoEl.srcObject = null; videoEl.style.display = 'none'; }
-
+  Quagga.offDetected();
+  try { Quagga.stop(); } catch(e) {}
   cameraActive = false;
+  // Stop video tracks
+  const v = document.querySelector('#scanner-container video');
+  if (v && v.srcObject) { v.srcObject.getTracks().forEach(t => t.stop()); v.srcObject = null; }
   document.getElementById('scan-placeholder').style.display = 'flex';
-  document.getElementById('scan-overlay').style.display     = 'none';
-  document.getElementById('scan-status').textContent        = 'Camera off';
-  document.getElementById('scan-status').className          = 'scan-status';
-  document.getElementById('btn-camera').textContent         = '📷 Camera On';
-  document.getElementById('btn-camera').className           = 'btn-scan';
+  document.getElementById('scan-overlay').style.display = 'none';
+  document.getElementById('scan-status').textContent = 'Camera off';
+  document.getElementById('scan-status').className = 'scan-status';
+  document.getElementById('btn-camera').textContent = '📷 Camera On';
+  document.getElementById('btn-camera').className = 'btn-scan';
 }
 
 // ═══ BARCODE PROCESSING ═══
@@ -1291,20 +1276,8 @@ function processManual() {
   document.getElementById('manual-barcode').value = '';
 }
 
-// ── Smart barcode matching (handles leading zeros, EAN vs UPC differences) ──
-function normalizeBarcode(code) {
-  return String(code).trim().replace(/^0+/, '') || '0';
-}
-function findInCatalog(raw) {
-  const norm = normalizeBarcode(raw);
-  return CATALOG.find(p => p.barcode === raw)
-      || CATALOG.find(p => normalizeBarcode(p.barcode) === norm)
-      || CATALOG.find(p => { const c = normalizeBarcode(p.barcode); return norm.endsWith(c) || c.endsWith(norm); })
-      || null;
-}
-
 function processBarcode(code) {
-  const product = findInCatalog(code);
+  const product = CATALOG.find(p => p.barcode === code);
   hideResultCards();
 
   if (product) {
