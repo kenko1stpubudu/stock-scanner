@@ -671,13 +671,25 @@
       </div>
     </div>
     <div class="stock-control">
-      <div class="stock-label">ස්ටොක් ප්‍රමාණය</div>
-      <div class="stock-row">
+      <div class="stock-label" id="stock-label">ස්ටොක් ප්‍රමාණය</div>
+      <!-- Standard qty row (pcs items) -->
+      <div class="stock-row" id="row-pcs">
         <button class="qty-btn minus" onclick="adjustQty(-1)">−</button>
         <input class="qty-input" id="qty-input" type="number" value="1" min="0" inputmode="numeric">
         <button class="qty-btn plus" onclick="adjustQty(1)">+</button>
         <span class="unit-label" id="unit-label">Units</span>
       </div>
+      <!-- Kg/g row (Raw Material items) -->
+      <div class="stock-row" id="row-kg" style="display:none;flex-wrap:wrap;gap:6px;">
+        <input class="qty-input" id="kg-input" type="number" value="0" min="0" step="0.001"
+               inputmode="decimal" placeholder="kg" style="width:70px">
+        <span class="unit-label" style="align-self:center">kg</span>
+        <span class="unit-label" style="align-self:center;color:var(--muted)">+</span>
+        <input class="qty-input" id="g-input" type="number" value="0" min="0" max="999" step="1"
+               inputmode="numeric" placeholder="g" style="width:60px">
+        <span class="unit-label" style="align-self:center">g</span>
+      </div>
+      <div id="kg-display" style="display:none;font-size:12px;color:var(--muted);margin-top:2px;text-align:center"></div>
     </div>
     <button class="btn-add" onclick="addToStock()">✅ Stock එකට Add කරන්න</button>
   </div>
@@ -767,18 +779,18 @@
 // ═══ PRODUCT CATALOG ═══
 // ← ඔබේ items මෙහි add කරන්න (barcode, name, icon, unit)
 const CATALOG = [
-{ barcode:'0000026', name:'BURNT CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'0000028', name:'DEVILLED CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'0000029', name:'Pistachio 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'000017', name:'Katupila Powder 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'000025', name:'Iramusu TBC 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'0001', name:'Silicagel 2g', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'000123', name:'Chocolate 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'000125', name:'SALT AND PEPPER CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'000126', name:'CHILLI GARLIC CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'000127', name:'GARLIC CASHEWNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'000143', name:'KHALAS DATES 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'0006', name:'Roasted Peanuts 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+{ barcode:'0000026', name:'BURNT CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'0000028', name:'DEVILLED CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'0000029', name:'Pistachio 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000017', name:'Katupila Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000025', name:'Iramusu TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'0001', name:'Silicagel 2g', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000123', name:'Chocolate 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000125', name:'SALT AND PEPPER CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000126', name:'CHILLI GARLIC CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000127', name:'GARLIC CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000143', name:'KHALAS DATES 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'0006', name:'Roasted Peanuts 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'00091', name:'GRAVITY 250ML MCT OIL', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
   { barcode:'4793002034031', name:'Helayo Bee Honey Garlic', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
   { barcode:'00416', name:'LITTLE TS OVEN ROAST PEANUT 150G', icon:'🥜', unit:'pcs', category:'Nuts' },
@@ -790,7 +802,7 @@ const CATALOG = [
   { barcode:'00467', name:'MOONSHADOW LAUNDRY BAR', icon:'💄', unit:'pcs', category:'Health & Beauty' },
   { barcode:'00468', name:'MOONSHADOW LAUNDRY POWDER', icon:'💄', unit:'pcs', category:'Health & Beauty' },
   { barcode:'00469', name:'MOONSHADOW SHAMPOO BAR', icon:'💄', unit:'pcs', category:'Health & Beauty' },
-  { barcode:'005', name:'Suwandal 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'005', name:'Suwandal 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'00503', name:'NIMK JACKFRUIT COOKIES 200G', icon:'🍫', unit:'pcs', category:'Snacks & Spreads' },
   { barcode:'00665', name:'SERENDIB CHOCOLATE 60G COCOA 70%', icon:'🍫', unit:'pcs', category:'Chocolates' },
   { barcode:'00666', name:'SERENDIB CHOCOLATE 100G COCOA100%', icon:'🍫', unit:'pcs', category:'Chocolates' },
@@ -798,12 +810,12 @@ const CATALOG = [
   { barcode:'00699', name:'SOBANIL SMOOTH PEANUT BUTTER 500G', icon:'🍫', unit:'pcs', category:'Snacks & Spreads' },
   { barcode:'00708', name:'SUNARA OSU EIGHT SEED', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'4793001319599', name:'KENKO1ST AMLA POWDER 50G PACK', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
-  { barcode:'123456789012', name:'Devilled Cashew with Karapincha 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'123456789012', name:'Devilled Cashew with Karapincha 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'00050', name:'CEYLON COFFEE BEANS MEDIUM ROAST200G', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
   { barcode:'20231102', name:'Coffee Sachet', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
-  { barcode:'202406081', name:'Bee honey 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'202406082', name:'105ML EMPTY GLASS BOTTLE AND LID', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'202406083', name:'Sticker Label Bee Honey', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'202406081', name:'Bee honey 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'202406082', name:'105ML EMPTY GLASS BOTTLE AND LID', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'202406083', name:'Sticker Label Bee Honey', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'250727', name:'MANNANKULAM VCO 250 ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
   { barcode:'4571143321018', name:'Japan Henna Natural 100g', icon:'💄', unit:'pcs', category:'Health & Beauty' },
   { barcode:'4571143321216', name:'Japan Henna Bronze Gray 100g', icon:'💄', unit:'pcs', category:'Health & Beauty' },
@@ -866,27 +878,27 @@ const CATALOG = [
   { barcode:'4793001319623', name:'KENKO1ST SOURSAP POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'4793001319624', name:'KENKO1ST THEBU LEAVES POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'4793001319629', name:'KENKO1ST POLPALA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
-  { barcode:'4793001319633', name:'ALMONDS 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319634', name:'APRICOT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319636', name:'BASIL SEED 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319637', name:'BLACK RAISINS 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319638', name:'BLUEBERRY 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319642', name:'CHIA SEEDS 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319643', name:'CRANBERRY 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319646', name:'DRY PINEAPPLE 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319647', name:'FLAX SEED 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319650', name:'HAZELNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4793001319633', name:'ALMONDS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319634', name:'APRICOT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319636', name:'BASIL SEED 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319637', name:'BLACK RAISINS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319638', name:'BLUEBERRY 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319642', name:'CHIA SEEDS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319643', name:'CRANBERRY 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319646', name:'DRY PINEAPPLE 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319647', name:'FLAX SEED 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319650', name:'HAZELNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'4793001319659', name:'KENKO1ST CUMIN 100G', icon:'🫙', unit:'pcs', category:'Spices' },
   { barcode:'4793001319662', name:'KENKO1ST IRAMUSU 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
-  { barcode:'4793001319663', name:'WALNUT 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319668', name:'Dried starwberry 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4793001319663', name:'WALNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319668', name:'Dried starwberry 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'4793001319669', name:'VANILA STICK', icon:'🛒', unit:'pcs', category:'Grocery' },
   { barcode:'4793001319670', name:'KENKO1ST BLACK TEA 100G PACK', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
-  { barcode:'4793001319671', name:'OVEN CASHEW PCS 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319672', name:'OVEN FULL CASHEW 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319673', name:'PSYLLIUM HUSK 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319675', name:'PUMPKIN SEED 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'4793001319676', name:'QUINOA 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4793001319671', name:'OVEN CASHEW PCS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319672', name:'OVEN FULL CASHEW 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319673', name:'PSYLLIUM HUSK 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319675', name:'PUMPKIN SEED 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319676', name:'QUINOA 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'4793001319683', name:'MOMIJI NATURAL LARGE - 01 PAD PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
   { barcode:'4793001319684', name:'MOMIJI NATURAL LARGE 02 PADS PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
   { barcode:'4793001319685', name:'MOMIJI NATURAL MEDIUM 01 PAD PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
@@ -1076,19 +1088,19 @@ const CATALOG = [
   { barcode:'4797001117276', name:'Chesta_Kurakkan Pasta 160g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
   { barcode:'5060366630216', name:'MIRACLE COCONUT BUTTER 300G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
   { barcode:'5072776', name:'MANNANKULAM  VCO 750ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
-  { barcode:'57000014', name:'Plastic Bottle Pet Round 585ml', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'57000042', name:'Plastic Bottle Pet Round 700ml', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'57000043', name:'Plastic Bottle Pet Round 900ml', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'57000014', name:'Plastic Bottle Pet Round 585ml', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'57000042', name:'Plastic Bottle Pet Round 700ml', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'57000043', name:'Plastic Bottle Pet Round 900ml', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'610373848620', name:'MIRACLE SESAMI OIL 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
   { barcode:'6103738486208', name:'MIRACLE EVCO 750ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
-  { barcode:'6103738486255', name:'OVEN CASHEWNUT HALF 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'6103738486255', name:'OVEN CASHEWNUT HALF 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'6103738486277', name:'KENKO1ST AMLA POWDER 100G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'6103738486296', name:'KENKO1ST FOREST BEE HONEY 460G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
   { barcode:'6103738486312', name:'KENKO1ST CLOVE POWDER 100G PACK', icon:'🫙', unit:'pcs', category:'Spices' },
   { barcode:'6103738486314', name:'KENKO1ST NUTS AND FRUITS 1KG PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
-  { barcode:'6103738486340', name:'Dried Kiwi 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'6103738486341', name:'Dried Cherry 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'6103738486342', name:'Dried Peach', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'6103738486340', name:'Dried Kiwi 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'6103738486341', name:'Dried Cherry 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'6103738486342', name:'Dried Peach', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'614409721758', name:'MIRACLE EVCO GLASS 1L', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
   { barcode:'614409721802', name:'MIRACLE COCONUT VINEGAR 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
   { barcode:'680666483654', name:'MIRACLE ORGANIC COCONUT MILK POWDER 300G', icon:'🛒', unit:'pcs', category:'Grocery' },
@@ -1096,43 +1108,43 @@ const CATALOG = [
   { barcode:'8901689703669', name:'Malas Grenadine Mocktail Syrup 750ml', icon:'🥤', unit:'pcs', category:'Beverage' },
   { barcode:'8901689705793', name:'Malas Peach Mocktail Syrup 750ml', icon:'🥤', unit:'pcs', category:'Beverage' },
   { barcode:'8901689705809', name:'Malas Grape Mocktail Syrup 750ml', icon:'🥤', unit:'pcs', category:'Beverage' },
-  { barcode:'8906115380155', name:'Dried Pruns 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'8906115380156', name:'Golden Raisins 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'8906115380155', name:'Dried Pruns 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8906115380156', name:'Golden Raisins 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'8908013252404', name:'Tropical Granola 500g', icon:'🍫', unit:'pcs', category:'Snacks & Spreads' },
-  { barcode:'8908013252418', name:'Mixture Bite 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'8908013252419', name:'Devilled Peanut 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'8908013252421', name:'Garlic Murukku 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'8908013252418', name:'Mixture Bite 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8908013252419', name:'Devilled Peanut 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8908013252421', name:'Garlic Murukku 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'8908013252426', name:'CoCo Syrup 300ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
   { barcode:'9477359650568', name:'Reap Lanka Curry Leaves Tea 50 g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'9477359650569', name:'Reap Moringa Tea 50g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'9477359650575', name:'REAPLANKA HEENBOVITIYA TEA 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'9477359650576', name:'CoCo Syrup 125ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
   { barcode:'9477359650587', name:'MEE OIL - 85ml', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
-  { barcode:'9477359650588', name:'Coffee Beans Dark Roast 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'9477359650589', name:'Coffee Beans Medium Roast 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650588', name:'Coffee Beans Dark Roast 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650589', name:'Coffee Beans Medium Roast 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'9477359650591', name:'Organic Ginger 1kg', icon:'🫙', unit:'pcs', category:'Spices' },
   { barcode:'9477359650593', name:'CoCo Syrup 500ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
   { barcode:'9477359650594', name:'CoCo Treacle 350ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
   { barcode:'9477359650595', name:'KENKO1ST_BEE HONEY 200G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
-  { barcode:'9477359650601', name:'Cheese with Cashew Nut 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'9477359650604', name:'Nai Chilli With Cashew Nut 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'9477359650605', name:'Kithul Coated Cashew Nut 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'9477359650606', name:'Kottamba Seeds 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650601', name:'Cheese with Cashew Nut 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650604', name:'Nai Chilli With Cashew Nut 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650605', name:'Kithul Coated Cashew Nut 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650606', name:'Kottamba Seeds 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'4796003268122', name:'SANSTHA  ARALU 2TABLETS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
   { barcode:'5072777', name:'MANNANKULAM COLD PRESSED VCO 750ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
   { barcode:'9477359650612', name:'Sobanil Peanut Butter Crunchy 500g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
-  { barcode:'9477359650639', name:'Glass Jar 450g', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650639', name:'Glass Jar 450g', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'9477359650640', name:'Garlic Powder 1kg', icon:'📦', unit:'pcs', category:'Wholesale' },
   { barcode:'9477359650641', name:'Big Onion Powder 1kg', icon:'📦', unit:'pcs', category:'Wholesale' },
   { barcode:'9477359650642', name:'Garcinia Powder 1kg', icon:'📦', unit:'pcs', category:'Wholesale' },
-  { barcode:'9477359650646', name:'Moringa Powder Tbc 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'9477359650647', name:'Glass Jar  With Lids and Shrink 200g', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650646', name:'Moringa Powder Tbc 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650647', name:'Glass Jar  With Lids and Shrink 200g', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'9477359650650', name:'NIMK DARK CHOCOLATE 80G', icon:'🍫', unit:'pcs', category:'Chocolates' },
-  { barcode:'9477359650655', name:'Shrink', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650655', name:'Shrink', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'4793000609743', name:'Divine kithul jaggery 300g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
   { barcode:'9477359650658', name:'REAPLANKA THEBU TEA 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
-  { barcode:'9477359650660', name:'COCOA NIBS 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
-  { barcode:'9477359650661', name:'Dry Lime Slices', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650660', name:'COCOA NIBS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650661', name:'Dry Lime Slices', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'9477359650663', name:'AYURLABS HAIR GROWTH OIL 100ML', icon:'💄', unit:'pcs', category:'Health & Beauty' },
   { barcode:'9477359650669', name:'PISTACHIO CHILLI 1kg', icon:'🥜', unit:'pcs', category:'Nuts' },
   { barcode:'9477359650670', name:'PISTACHIO CHEESE 1kg', icon:'🥜', unit:'pcs', category:'Nuts' },
@@ -1320,19 +1332,42 @@ function processBarcode(code) {
 function showResultCard(product, code) {
   document.getElementById('res-icon').textContent = product.icon || '📦';
   document.getElementById('res-name').textContent = product.name;
-  // Show scanned code + catalog barcode if different
   const displayCode = (product.barcode && product.barcode !== code)
-    ? code + ' → ' + product.barcode
-    : code;
+    ? code + ' → ' + product.barcode : code;
   document.getElementById('res-barcode').textContent = displayCode;
   document.getElementById('res-category').textContent = product.category || '';
-  document.getElementById('unit-label').textContent = product.unit || 'pcs';
 
-  // Use catalog barcode as stock key (consistent)
   const stockKey = product.barcode || code;
   const existing = stockData[stockKey];
-  document.getElementById('qty-input').value = existing ? existing.qty : 1;
+  const isKg = product.unit === 'kg';
+
+  // Toggle input rows
+  document.getElementById('row-pcs').style.display = isKg ? 'none' : 'flex';
+  document.getElementById('row-kg').style.display  = isKg ? 'flex' : 'none';
+  document.getElementById('kg-display').style.display = isKg ? 'block' : 'none';
+  document.getElementById('unit-label').textContent = product.unit || 'pcs';
+  document.getElementById('stock-label').textContent = isKg
+    ? 'ස්ටොක් ප්‍රමාණය (kg + g)' : 'ස්ටොක් ප්‍රමාණය';
+
+  if (isKg) {
+    const existKg = existing ? existing.qty : 0;  // stored as decimal kg
+    const wholeKg = Math.floor(existKg);
+    const grams   = Math.round((existKg - wholeKg) * 1000);
+    document.getElementById('kg-input').value = wholeKg || 0;
+    document.getElementById('g-input').value  = grams   || 0;
+    updateKgDisplay();
+  } else {
+    document.getElementById('qty-input').value = existing ? existing.qty : 1;
+  }
+
   document.getElementById('result-card').classList.add('show');
+}
+
+function updateKgDisplay() {
+  const kg = parseFloat(document.getElementById('kg-input').value) || 0;
+  const g  = parseFloat(document.getElementById('g-input').value)  || 0;
+  const total = kg + g / 1000;
+  document.getElementById('kg-display').textContent = 'මුළු ප්‍රමාණය: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
 }
 
 function hideResultCards() {
@@ -1345,9 +1380,33 @@ function adjustQty(delta) {
   inp.value = Math.max(0, parseInt(inp.value || 0) + delta);
 }
 
+// kg-input / g-input onchange handlers (called inline)
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('kg-input').addEventListener('input', updateKgDisplay);
+  document.getElementById('g-input').addEventListener('input', () => {
+    // auto carry: if g >= 1000, carry to kg
+    let g = parseFloat(document.getElementById('g-input').value) || 0;
+    if (g >= 1000) {
+      const carry = Math.floor(g / 1000);
+      document.getElementById('kg-input').value =
+        (parseFloat(document.getElementById('kg-input').value) || 0) + carry;
+      document.getElementById('g-input').value = g % 1000;
+    }
+    updateKgDisplay();
+  });
+});
+
 function addToStock() {
   if (!currentScanned) return;
-  const qty = parseInt(document.getElementById('qty-input').value) || 0;
+  const isKg = currentScanned.unit === 'kg';
+  let qty;
+  if (isKg) {
+    const kg = parseFloat(document.getElementById('kg-input').value) || 0;
+    const g  = parseFloat(document.getElementById('g-input').value)  || 0;
+    qty = parseFloat((kg + g / 1000).toFixed(3));
+  } else {
+    qty = parseInt(document.getElementById('qty-input').value) || 0;
+  }
   const key = currentScanned.barcode;
 
   stockData[key] = {
@@ -1360,7 +1419,10 @@ function addToStock() {
   renderStock();
   hideResultCards();
   currentScanned = null;
-  showToast('✅ ' + stockData[key].name + ' — Qty: ' + qty, 'success');
+  const qtyDisplay = (currentScanned && currentScanned.unit === 'kg')
+    ? qty.toFixed(3) + ' kg (' + (qty * 1000).toFixed(0) + ' g)'
+    : qty + ' ' + (stockData[key].unit || 'pcs');
+  showToast('✅ ' + stockData[key].name + ' — ' + qtyDisplay, 'success');
   document.getElementById('scan-status').textContent = 'Ready to scan';
   document.getElementById('scan-status').className = 'scan-status active';
 }
@@ -1394,8 +1456,21 @@ function renderStock() {
   const list = document.getElementById('stock-list');
   const items = Object.values(stockData).filter(i => !q || i.name.toLowerCase().includes(q) || i.barcode.includes(q));
 
-  document.getElementById('s-items').textContent = Object.keys(stockData).length;
-  document.getElementById('s-total').textContent = Object.values(stockData).reduce((s,i) => s + i.qty, 0);
+  const allItems = Object.values(stockData);
+  document.getElementById('s-items').textContent = allItems.length;
+  // Separate totals: pcs count vs kg total
+  const pcsTotal = allItems.filter(i => i.unit !== 'kg').reduce((s,i) => s + i.qty, 0);
+  const kgTotal  = allItems.filter(i => i.unit === 'kg').reduce((s,i) => s + i.qty, 0);
+  const totalEl  = document.getElementById('s-total');
+  if (kgTotal > 0 && pcsTotal > 0) {
+    totalEl.textContent = pcsTotal + ' + ' + kgTotal.toFixed(3) + 'kg';
+    totalEl.style.fontSize = '13px';
+  } else if (kgTotal > 0) {
+    totalEl.textContent = kgTotal.toFixed(3) + ' kg';
+  } else {
+    totalEl.textContent = pcsTotal;
+    totalEl.style.fontSize = '';
+  }
 
   if (!items.length) {
     list.innerHTML = `<div class="empty-state"><div class="emoji">📦</div><div>${q ? 'Results නැත' : 'Scan කළ items මෙහි දිස් වේ'}</div></div>`;
@@ -1410,8 +1485,11 @@ function renderStock() {
         <div class="item-barcode">${item.barcode}</div>
       </div>
       <div class="item-qty">
-        <div class="qty-val" style="color:${item.qty > 0 ? 'var(--accent)' : 'var(--red)'}">${item.qty}</div>
+        <div class="qty-val" style="color:${item.qty > 0 ? 'var(--accent)' : 'var(--red)'}">
+          ${item.unit === 'kg' ? item.qty.toFixed(3) : item.qty}
+        </div>
         <div class="qty-unit">${item.unit || 'pcs'}</div>
+        ${item.unit === 'kg' ? '<div class="qty-unit" style="color:var(--muted);font-size:9px;">(' + (item.qty * 1000).toFixed(0) + ' g)</div>' : ''}
       </div>
       <button class="edit-btn" onclick="editItem('${item.barcode}')">✏️</button>
       <button class="del-btn" onclick="deleteItem('${item.barcode}')">🗑</button>
