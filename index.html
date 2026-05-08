@@ -661,6 +661,7 @@
     <span class="browse-count" id="browse-count">369 items</span>
   </button>
 
+  <div class="result-card" id="result-card">
     <div class="result-product">
       <div class="result-icon" id="res-icon">📦</div>
       <div>
@@ -1211,6 +1212,7 @@ async function startCamera() {
           const hits = await detector.detect(videoEl);
           if (hits.length > 0) {
             const code = hits[0].rawValue;
+            console.log('[DETECTOR] barcode:', code, 'format:', hits[0].format);
             if (code && code !== lastBarcode) {
               lastBarcode = code;
               setTimeout(() => { lastBarcode = ''; }, 4000);
@@ -1291,11 +1293,14 @@ function findInCatalog(raw) {
       || null;
 }
 function processBarcode(code) {
+  console.log('[SCAN] code received:', code);
   const product = findInCatalog(code);
+  console.log('[SCAN] product found:', product ? product.name : 'NOT FOUND');
   hideResultCards();
 
   if (product) {
-    currentScanned = { ...product, barcode: code };
+    // Keep catalog barcode as key; store scanned code for display
+    currentScanned = { ...product, scannedCode: code };
     showResultCard(product, code);
     navigator.vibrate && navigator.vibrate(60);
     document.getElementById('scan-status').textContent = '✓ Found: ' + product.name;
@@ -1315,12 +1320,17 @@ function processBarcode(code) {
 function showResultCard(product, code) {
   document.getElementById('res-icon').textContent = product.icon || '📦';
   document.getElementById('res-name').textContent = product.name;
-  document.getElementById('res-barcode').textContent = code;
+  // Show scanned code + catalog barcode if different
+  const displayCode = (product.barcode && product.barcode !== code)
+    ? code + ' → ' + product.barcode
+    : code;
+  document.getElementById('res-barcode').textContent = displayCode;
   document.getElementById('res-category').textContent = product.category || '';
   document.getElementById('unit-label').textContent = product.unit || 'pcs';
 
-  // existing qty
-  const existing = stockData[code];
+  // Use catalog barcode as stock key (consistent)
+  const stockKey = product.barcode || code;
+  const existing = stockData[stockKey];
   document.getElementById('qty-input').value = existing ? existing.qty : 1;
   document.getElementById('result-card').classList.add('show');
 }
