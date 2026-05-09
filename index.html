@@ -3,15 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Stock Scanner">
-<meta name="theme-color" content="#00e5a0">
-<meta name="description" content="Barcode stock counting app for Kenko1st">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <title>Stock Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -285,6 +276,29 @@
     white-space: nowrap;
   }
   .btn-manual:active { opacity: 0.8; }
+
+  /* ── QUICK ACTION BAR ── */
+  .quick-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+  .qa-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 11px 6px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    text-align: center;
+    transition: opacity 0.2s, transform 0.15s;
+    font-family: 'Syne','Noto Sans Sinhala',sans-serif;
+    letter-spacing: 0.2px;
+  }
+  .qa-btn:active { transform: scale(0.96); opacity: 0.8; }
+  .qa-export { background: linear-gradient(135deg,#1a6640,var(--accent)); color:#000; }
+  .qa-share  { background: linear-gradient(135deg,#075e54,#25d366); color:#fff; }
+  .qa-clear  { background: #1a0d10; color: var(--red); border: 1px solid #3d1520; }
 
   .btn-browse {
     width: 100%;
@@ -647,7 +661,7 @@
         <video id="scan-video" autoplay muted playsinline></video>
         <div class="scan-placeholder" id="scan-placeholder">
           <div class="icon">📷</div>
-          <div>Point camera at barcode</div>
+          <div>Camera start කරන්න</div>
         </div>
       </div>
       <div class="scan-overlay" id="scan-overlay" style="display:none">
@@ -661,14 +675,20 @@
   </div>
 
   <div class="manual-row">
-    <input class="manual-input" id="manual-barcode" placeholder="Type barcode manually..." inputmode="numeric">
+    <input class="manual-input" id="manual-barcode" placeholder="Barcode manually type කරන්න..." inputmode="numeric">
     <button class="btn-manual" onclick="processManual()">Search</button>
   </div>
 
   <button class="btn-browse" onclick="openCatalog()">
-    📋 <span>Browse Catalog</span>
+    📋 <span>Catalog Browse කරන්න</span>
     <span class="browse-count" id="browse-count">369 items</span>
   </button>
+
+  <div class="quick-actions">
+    <button class="qa-btn qa-export" onclick="exportAndShare()">⬇️ Export Excel</button>
+    <button class="qa-btn qa-share"  onclick="shareExcel()">📤 WhatsApp</button>
+    <button class="qa-btn qa-clear"  onclick="clearAll()">🗑️ Clear All</button>
+  </div>
 
   <div class="result-card" id="result-card">
     <div class="result-product">
@@ -680,35 +700,35 @@
       </div>
     </div>
     <div class="stock-control">
-      <div class="stock-label" id="stock-label">Quantity</div>
+      <div class="stock-label" id="stock-label">ස්ටොක් ප්‍රමාණය</div>
       <!-- Standard qty row (pcs items) -->
       <div class="stock-row" id="row-pcs">
         <button class="qty-btn minus" onclick="adjustQty(-1)">−</button>
-        <input class="qty-input" id="qty-input" type="number" value="1" min="0" inputmode="numeric">
+        <input class="qty-input" id="qty-input" type="number" value="" min="0" inputmode="numeric" placeholder="0" onfocus="this.select()">
         <button class="qty-btn plus" onclick="adjustQty(1)">+</button>
         <span class="unit-label" id="unit-label">Units</span>
       </div>
       <!-- Kg/g row (Raw Material items) -->
       <div class="stock-row" id="row-kg" style="display:none;flex-wrap:wrap;gap:6px;">
-        <input class="qty-input" id="kg-input" type="number" value="0" min="0" step="0.001"
+        <input class="qty-input" id="kg-input" type="number" value="0" min="0" step="0.001" onfocus="this.select()"
                inputmode="decimal" placeholder="kg" style="width:70px">
         <span class="unit-label" style="align-self:center">kg</span>
         <span class="unit-label" style="align-self:center;color:var(--muted)">+</span>
-        <input class="qty-input" id="g-input" type="number" value="0" min="0" max="999" step="1"
+        <input class="qty-input" id="g-input" type="number" value="0" min="0" max="999" step="1" onfocus="this.select()"
                inputmode="numeric" placeholder="g" style="width:60px">
         <span class="unit-label" style="align-self:center">g</span>
       </div>
       <div id="kg-display" style="display:none;font-size:12px;color:var(--muted);margin-top:2px;text-align:center"></div>
     </div>
-    <button class="btn-add" onclick="addToStock()">✅ Add to Stock</button>
+    <button class="btn-add" onclick="addToStock()">✅ Stock එකට Add කරන්න</button>
   </div>
 
   <div class="not-found-card" id="not-found-card">
-    <div class="not-found-title">❌ Barcode not found in catalog</div>
+    <div class="not-found-title">❌ Barcode හඳුනාගත නොහැකි විය</div>
     <div class="not-found-code" id="nf-barcode">–</div>
-    <input class="nf-input" id="nf-name" placeholder="Enter item name...">
+    <input class="nf-input" id="nf-name" placeholder="Item නම ඇතුළු කරන්න...">
     <div class="nf-row">
-      <button class="btn-nf-add" onclick="addUnknown()">+ Add Item</button>
+      <button class="btn-nf-add" onclick="addUnknown()">+ Add කරන්න</button>
       <button class="btn-nf-skip" onclick="skipUnknown()">Skip</button>
     </div>
   </div>
@@ -720,11 +740,11 @@
   <div class="stock-summary">
     <div class="summary-card">
       <div class="summary-val green" id="s-items">0</div>
-      <div class="summary-lbl">Item Types</div>
+      <div class="summary-lbl">Item වර්ග</div>
     </div>
     <div class="summary-card">
       <div class="summary-val purple" id="s-total">0</div>
-      <div class="summary-lbl">Total Qty</div>
+      <div class="summary-lbl">මුළු ප්‍රමාණය</div>
     </div>
   </div>
 
@@ -736,7 +756,7 @@
   <div class="stock-list" id="stock-list">
     <div class="empty-state">
       <div class="emoji">📦</div>
-      <div>Scanned items appear here</div>
+      <div>Scan කළ items මෙහි දිස් වේ</div>
     </div>
   </div>
 </div>
@@ -745,14 +765,15 @@
 <div class="page" id="page-export">
   <div class="export-card">
     <div class="export-title">📊 Excel Export</div>
-    <div class="export-sub">Download all scanned items as an Excel file (.xlsx) by clicking the button below.</div>
+    <div class="export-sub">සියලුම scanned items Excel file (.xlsx) ලෙස download කරගන්නට පහත button click කරන්න.</div>
     <div class="preview-table" id="export-preview">
       <table>
         <thead><tr><th>#</th><th>Item Name</th><th>Barcode</th><th>Qty</th><th>Scanned At</th></tr></thead>
         <tbody id="preview-body"><tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No data yet</td></tr></tbody>
       </table>
     </div>
-    <button class="btn-export" onclick="exportExcel()">⬇️ Excel Download කරන්න</button>
+    <button class="btn-export" onclick="exportExcel(false)">⬇️ Download Excel</button>
+    <button class="btn-export" onclick="shareExcel()" style="background:linear-gradient(135deg,#075e54,#25d366);margin-top:0">📤 Share via WhatsApp</button>
     <button class="btn-clear" onclick="clearAll()">🗑️ Clear All</button>
   </div>
 </div>
@@ -766,7 +787,7 @@
     </div>
     <div class="sheet-search">
       <span>🔍</span>
-      <input id="catalog-search" placeholder="Search items..." oninput="renderCatalog()" autocomplete="off">
+      <input id="catalog-search" placeholder="Item search කරන්න..." oninput="renderCatalog()" autocomplete="off">
     </div>
     <div class="cat-filter-row" id="cat-filter-row"></div>
     <div id="catalog-list"></div>
@@ -775,21 +796,21 @@
       <!-- pcs row -->
       <div class="sqb-controls" id="sqb-row-pcs">
         <button class="qty-btn minus" onclick="sqbAdjust(-1)">−</button>
-        <input class="qty-input sqb-input" id="sqb-qty" type="number" value="1" min="0" inputmode="numeric">
+        <input class="qty-input sqb-input" id="sqb-qty" type="number" value="" min="0" inputmode="numeric" placeholder="0" onfocus="this.select()">
         <button class="qty-btn plus" onclick="sqbAdjust(1)">+</button>
       </div>
       <!-- kg/g row -->
       <div class="sqb-controls" id="sqb-row-kg" style="display:none;flex-wrap:wrap;gap:6px;">
-        <input class="qty-input" id="sqb-kg" type="number" value="0" min="0" step="0.001"
+        <input class="qty-input" id="sqb-kg" type="number" value="0" min="0" step="0.001" onfocus="this.select()"
                inputmode="decimal" placeholder="kg" style="width:65px" oninput="sqbUpdateKg()">
         <span class="unit-label" style="align-self:center">kg</span>
         <span style="align-self:center;color:var(--muted)">+</span>
-        <input class="qty-input" id="sqb-g" type="number" value="0" min="0" max="999" step="1"
+        <input class="qty-input" id="sqb-g" type="number" value="0" min="0" max="999" step="1" onfocus="this.select()"
                inputmode="numeric" placeholder="g" style="width:55px" oninput="sqbCarryG()">
         <span class="unit-label" style="align-self:center">g</span>
       </div>
       <div id="sqb-kg-display" style="display:none;font-size:11px;color:var(--muted);text-align:center;width:100%"></div>
-      <button class="sqb-add" onclick="sqbAdd()">✅ Add to Stock</button>
+      <button class="sqb-add" onclick="sqbAdd()">✅ Add කරන්න</button>
     </div>
   </div>
 </div>
@@ -798,7 +819,7 @@
 
 <script>
 // ═══ PRODUCT CATALOG ═══
-// ← Add your items here (barcode, name, icon, unit)
+// ← ඔබේ items මෙහි add කරන්න (barcode, name, icon, unit)
 const CATALOG = [
 { barcode:'0000026', name:'BURNT CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
   { barcode:'0000028', name:'DEVILLED CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
@@ -1171,46 +1192,7 @@ const CATALOG = [
   { barcode:'9477359650670', name:'PISTACHIO CHEESE 1kg', icon:'🥜', unit:'pcs', category:'Nuts' },
 ];
 
-let stockData = {};   // { barcode: { ...product, qty, lastScan } }
-
-// ── LOCAL STORAGE ──
-const LS_KEY = 'kenko_stock_v1';
-
-function saveStock() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(stockData)); } catch(e) {}
-}
-
-function loadStock() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) { stockData = JSON.parse(raw); }
-  } catch(e) { stockData = {}; }
-}
-
-// Warn before leaving if data exists
-window.addEventListener('beforeunload', e => {
-  if (Object.keys(stockData).length > 0) {
-    e.preventDefault();
-    e.returnValue = 'You have unsaved stock data. Are you sure you want to leave?';
-    return e.returnValue;
-  }
-});
-
-// Handle Android back button via popstate
-history.pushState(null, '', location.href);
-window.addEventListener('popstate', () => {
-  if (Object.keys(stockData).length > 0) {
-    const leave = confirm('⚠️ You have ' + Object.keys(stockData).length + ' item(s) in stock.\nLeave and lose data?\n\nPress Cancel to stay.');
-    if (leave) {
-      saveStock();
-      history.back();
-    } else {
-      history.pushState(null, '', location.href);
-    }
-  } else {
-    history.back();
-  }
-});
+let stockData   = {};   // { barcode: { ...product, qty, lastScan } }
 let lastBarcode = '';
 let currentScanned = null;
 let cameraActive  = false;
@@ -1251,13 +1233,13 @@ async function startCamera() {
   } catch (err) {
     const n = String(err.name || '').toLowerCase();
     if (n === 'notallowederror' || n === 'permissiondeniederror') {
-      showToast('📷 Camera permission denied. Allow in browser settings.', 'error');
+      showToast('📷 Camera permission deny යි. Browser settings > Allow', 'error');
     } else if (n === 'notfounderror' || n === 'devicenotfounderror') {
-      showToast('📷 No camera device found', 'error');
+      showToast('📷 Camera device හොයා ගත නොහැකිය', 'error');
     } else if (n === 'notreadableerror') {
-      showToast('📷 Camera in use by another app — close it', 'error');
+      showToast('📷 Camera වෙන app එකේ පාවිච්චි වෙනවා — close කරන්න', 'error');
     } else {
-      showToast('Camera error: ' + String(err.message || err).slice(0,70), 'error');
+      showToast('Camera: ' + String(err.message || err).slice(0,70), 'error');
     }
     resetScanUI(); return;
   }
@@ -1322,7 +1304,7 @@ async function startCamera() {
       processBarcode(code);
     });
   } catch(e) {
-    showToast('Scanner failed to load — check WiFi/Data connection', 'error');
+    showToast('Scanner load වුණේ නෑ — WiFi/Data on කරන්න', 'error');
     stopCamera();
   }
 }
@@ -1349,7 +1331,7 @@ function resetScanUI() {
 // ═══ BARCODE PROCESSING ═══
 function processManual() {
   const code = document.getElementById('manual-barcode').value.trim();
-  if (!code) { showToast('Enter a barcode', 'error'); return; }
+  if (!code) { showToast('Barcode ඇතුළු කරන්න', 'error'); return; }
   processBarcode(code);
   document.getElementById('manual-barcode').value = '';
 }
@@ -1407,7 +1389,7 @@ function showResultCard(product, code) {
   document.getElementById('kg-display').style.display = isKg ? 'block' : 'none';
   document.getElementById('unit-label').textContent = product.unit || 'pcs';
   document.getElementById('stock-label').textContent = isKg
-    ? 'Quantity (kg + g)' : 'Quantity';
+    ? 'ස්ටොක් ප්‍රමාණය (kg + g)' : 'ස්ටොක් ප්‍රමාණය';
 
   if (isKg) {
     const existKg = existing ? existing.qty : 0;  // stored as decimal kg
@@ -1417,7 +1399,13 @@ function showResultCard(product, code) {
     document.getElementById('g-input').value  = grams   || 0;
     updateKgDisplay();
   } else {
-    document.getElementById('qty-input').value = existing ? existing.qty : 1;
+    if (existing) {
+      // Duplicate scan — show existing qty so user can add to it
+      document.getElementById('qty-input').value = existing.qty;
+      showToast('⚠️ Already in stock: ' + existing.qty + ' ' + (existing.unit||'pcs') + ' — update qty below', 'info');
+    } else {
+      document.getElementById('qty-input').value = '';
+    }
   }
 
   document.getElementById('result-card').classList.add('show');
@@ -1427,7 +1415,7 @@ function updateKgDisplay() {
   const kg = parseFloat(document.getElementById('kg-input').value) || 0;
   const g  = parseFloat(document.getElementById('g-input').value)  || 0;
   const total = kg + g / 1000;
-  document.getElementById('kg-display').textContent = 'Total Qty: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
+  document.getElementById('kg-display').textContent = 'මුළු ප්‍රමාණය: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
 }
 
 function hideResultCards() {
@@ -1442,9 +1430,6 @@ function adjustQty(delta) {
 
 // kg-input / g-input onchange handlers (called inline)
 document.addEventListener('DOMContentLoaded', () => {
-  loadStock();
-  updateBadge();
-  renderStock();
   document.getElementById('kg-input').addEventListener('input', updateKgDisplay);
   document.getElementById('g-input').addEventListener('input', () => {
     // auto carry: if g >= 1000, carry to kg
@@ -1478,7 +1463,6 @@ function addToStock() {
     lastScan: new Date().toLocaleString('si-LK')
   };
 
-  saveStock();
   updateBadge();
   renderStock();
   hideResultCards();
@@ -1494,7 +1478,7 @@ function addToStock() {
 function addUnknown() {
   const name = document.getElementById('nf-name').value.trim();
   const code = document.getElementById('not-found-card').dataset.barcode;
-  if (!name) { showToast('Enter item name', 'error'); return; }
+  if (!name) { showToast('Item නම ඇතුළු කරන්න', 'error'); return; }
 
   stockData[code] = {
     barcode: code, name, icon: '📦', unit: 'pcs',
@@ -1502,7 +1486,6 @@ function addUnknown() {
     lastScan: new Date().toLocaleString('si-LK')
   };
 
-  saveStock();
   updateBadge();
   renderStock();
   hideResultCards();
@@ -1538,7 +1521,7 @@ function renderStock() {
   }
 
   if (!items.length) {
-    list.innerHTML = `<div class="empty-state"><div class="emoji">📦</div><div>${q ? 'No results' : 'Scanned items appear here'}</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="emoji">📦</div><div>${q ? 'Results නැත' : 'Scan කළ items මෙහි දිස් වේ'}</div></div>`;
     return;
   }
 
@@ -1569,13 +1552,12 @@ function editItem(code) {
   showResultCard(item, code);
   switchTab('scan');
   document.getElementById('qty-input').value = item.qty;
-  showToast('Editing: ' + item.name, 'info');
+  showToast('Edit mode: ' + item.name, 'info');
 }
 
 function deleteItem(code) {
   const name = stockData[code]?.name;
   delete stockData[code];
-  saveStock();
   updateBadge(); renderStock();
   showToast('🗑 Deleted: ' + name, 'error');
 }
@@ -1599,9 +1581,88 @@ function renderPreview() {
   `).join('');
 }
 
-function exportExcel() {
+// ── Export + WhatsApp Share ──
+let lastExportedBlob = null;
+let lastExportedName = '';
+
+function exportAndShare() {
+  exportExcel(false); // export without auto-share
+}
+
+function shareExcel() {
   const items = Object.values(stockData);
   if (!items.length) { showToast('No data to export', 'error'); return; }
+  exportExcel(true);
+}
+
+function exportExcel(autoShare) {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('No data to export', 'error'); return; }
+
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
+  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+
+  const ws_data = [
+    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
+    ...items.map((item, i) => [
+      i+1, item.name, item.category || '', item.barcode,
+      item.qty, item.unit || 'pcs', item.lastScan
+    ]),
+    [],
+    ['', '', '', 'Total Quantity', items.reduce((s,i) => s + i.qty, 0), ''],
+    ['', '', '', 'Export Date',    dateStr, ''],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  ws['!cols'] = [{wch:4},{wch:28},{wch:16},{wch:18},{wch:10},{wch:8},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+
+  if (autoShare && navigator.share && navigator.canShare) {
+    // Generate file blob for Web Share API
+    const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+    const blob  = new Blob([wbout], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const file  = new File([blob], fname, { type: blob.type });
+
+    if (navigator.canShare({ files:[file] })) {
+      navigator.share({
+        title: 'Kenko1st Stock Count',
+        text:  'Stock count — ' + items.length + ' items',
+        files: [file],
+      }).then(() => showToast('✅ Shared!', 'success'))
+        .catch(err => {
+          // Fallback: WhatsApp web with text summary
+          fallbackWhatsApp(items, dateStr);
+        });
+      return;
+    }
+  }
+
+  if (autoShare) {
+    fallbackWhatsApp(items, dateStr);
+    return;
+  }
+
+  XLSX.writeFile(wb, fname);
+  showToast('✅ Excel downloaded!', 'success');
+}
+
+function fallbackWhatsApp(items, dateStr) {
+  // Send a text summary via WhatsApp if file share not supported
+  const total = items.reduce((s,i) => s + i.qty, 0);
+  const lines = ['*Kenko1st Stock Count — ' + dateStr + '*', ''];
+  items.forEach((item,i) => {
+    lines.push((i+1) + '. ' + item.name + ' — *' + item.qty + ' ' + (item.unit||'pcs') + '*');
+  });
+  lines.push('', 'Total items: *' + items.length + '*  |  Total qty: *' + total + '*');
+  const msg = encodeURIComponent(lines.join('\n'));
+  window.open('https://wa.me/?text=' + msg, '_blank');
+}
+
+
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('Export කිරීමට data නැත', 'error'); return; }
 
   const date = new Date();
   const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
@@ -1613,7 +1674,7 @@ function exportExcel() {
       item.qty, item.unit || 'pcs', item.lastScan
     ]),
     [],
-    ['', '', '', 'Total Qty', items.reduce((s,i) => s + i.qty, 0), ''],
+    ['', '', '', 'මුළු ප්‍රමාණය', items.reduce((s,i) => s + i.qty, 0), ''],
     ['', '', '', 'Export Date', dateStr, ''],
   ];
 
@@ -1627,14 +1688,13 @@ function exportExcel() {
 
   XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
   XLSX.writeFile(wb, `Kenko_Stock_${dateStr}.xlsx`);
-  showToast('✅ Excel downloaded successfully!', 'success');
+  showToast('✅ Excel download සාර්ථකයි!', 'success');
 }
 
 function clearAll() {
-  if (!Object.keys(stockData).length) { showToast('No data', 'error'); return; }
-  if (confirm('Delete all stock data?')) {
+  if (!Object.keys(stockData).length) { showToast('Data නැත', 'error'); return; }
+  if (confirm('සියලු stock data delete කරන්නද?')) {
     stockData = {};
-    saveStock();
     updateBadge(); renderStock(); renderPreview();
     showToast('🗑 Stock data cleared', 'error');
   }
@@ -1678,7 +1738,7 @@ function renderCatalog() {
   });
 
   if (!filtered.length) {
-    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No results</div>`;
+    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Results නැත</div>`;
     return;
   }
 
@@ -1721,7 +1781,7 @@ function selectCatalogItem(barcode) {
     document.getElementById('sqb-g').value  = Math.round((existKg % 1) * 1000) || 0;
     sqbUpdateKg();
   } else {
-    document.getElementById('sqb-qty').value = existing ? existing.qty : 1;
+    document.getElementById('sqb-qty').value = existing ? existing.qty : '';
   }
 
   renderCatalog();
@@ -1733,7 +1793,7 @@ function sqbUpdateKg() {
   const g  = parseFloat(document.getElementById('sqb-g').value)  || 0;
   const total = kg + g / 1000;
   document.getElementById('sqb-kg-display').textContent =
-    'Total: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
+    'මුළු: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
 }
 
 function sqbCarryG() {
@@ -1809,16 +1869,6 @@ document.getElementById('manual-barcode').addEventListener('keydown', e => {
 });
 
 
-</script>
-<script>
-// ── Service Worker Registration (PWA) ──
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[PWA] SW registered:', reg.scope))
-      .catch(err => console.warn('[PWA] SW failed:', err));
-  });
-}
 </script>
 </body>
 </html>
