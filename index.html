@@ -1661,35 +1661,6 @@ function fallbackWhatsApp(items, dateStr) {
 }
 
 
-  const items = Object.values(stockData);
-  if (!items.length) { showToast('Export කිරීමට data නැත', 'error'); return; }
-
-  const date = new Date();
-  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
-
-  const ws_data = [
-    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
-    ...items.map((item, i) => [
-      i+1, item.name, item.category || '', item.barcode,
-      item.qty, item.unit || 'pcs', item.lastScan
-    ]),
-    [],
-    ['', '', '', 'මුළු ප්‍රමාණය', items.reduce((s,i) => s + i.qty, 0), ''],
-    ['', '', '', 'Export Date', dateStr, ''],
-  ];
-
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(ws_data);
-
-  // Column widths
-  ws['!cols'] = [
-    {wch:4}, {wch:28}, {wch:16}, {wch:18}, {wch:10}, {wch:8}, {wch:22}
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
-  XLSX.writeFile(wb, `Kenko_Stock_${dateStr}.xlsx`);
-  showToast('✅ Excel download සාර්ථකයි!', 'success');
-}
 
 function clearAll() {
   if (!Object.keys(stockData).length) { showToast('Data නැත', 'error'); return; }
