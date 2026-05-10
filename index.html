@@ -249,6 +249,19 @@
   }
   .btn-add:active { transform: scale(0.98); opacity: 0.85; }
 
+  /* Keyboard open වෙනකොට Add button sticky ලෙස keyboard උඩ රඳවනු ලැෙෙ */
+  .btn-add-sticky {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 0 !important;
+    padding: 16px !important;
+    font-size: 15px !important;
+    z-index: 500;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+  }
+
   /* ── MANUAL BARCODE ── */
   .manual-row {
     display: flex; gap: 8px;
@@ -686,7 +699,7 @@
 
   <div class="quick-actions">
     <button class="qa-btn qa-export" onclick="exportAndShare()">⬇️ Export Excel</button>
-    <button class="qa-btn qa-share"  onclick="shareExcel()">📤 WhatsApp</button>
+    <button class="qa-btn qa-share"  onclick="shareExcelFile()">📤 Share</button>
     <button class="qa-btn qa-clear"  onclick="clearAll()">🗑️ Clear All</button>
   </div>
 
@@ -720,7 +733,7 @@
       </div>
       <div id="kg-display" style="display:none;font-size:12px;color:var(--muted);margin-top:2px;text-align:center"></div>
     </div>
-    <button class="btn-add" onclick="addToStock()">✅ Stock එකට Add කරන්න</button>
+    <button class="btn-add" id="btn-add-stock" onclick="addToStock()">✅ Stock එකට Add කරන්න</button>
   </div>
 
   <div class="not-found-card" id="not-found-card">
@@ -773,7 +786,7 @@
       </table>
     </div>
     <button class="btn-export" onclick="exportExcel(false)">⬇️ Download Excel</button>
-    <button class="btn-export" onclick="shareExcel()" style="background:linear-gradient(135deg,#075e54,#25d366);margin-top:0">📤 Share via WhatsApp</button>
+    <button class="btn-export" onclick="shareExcelFile()" style="background:linear-gradient(135deg,#075e54,#25d366);margin-top:0">📤 Share Excel (WhatsApp / Email)</button>
     <button class="btn-clear" onclick="clearAll()">🗑️ Clear All</button>
   </div>
 </div>
@@ -1589,10 +1602,125 @@ function exportAndShare() {
   exportExcel(false); // export without auto-share
 }
 
-function shareExcel() {
+function shareExcel() { shareExcelFile(); }
+
+async function shareExcelFile() {
   const items = Object.values(stockData);
   if (!items.length) { showToast('No data to export', 'error'); return; }
-  exportExcel(true);
+
+  // Build Excel
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g, '-');
+  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+
+  const ws_data = [
+    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
+    ...items.map((item, i) => [
+      i + 1, item.name, item.category || '', item.barcode,
+      item.unit === 'kg' ? item.qty.toFixed(3) : item.qty,
+      item.unit || 'pcs', item.lastScan
+    ]),
+    [],
+    ['', '', '', 'Total Items',    items.length, ''],
+    ['', '', '', 'Export Date',    dateStr,       ''],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  ws['!cols'] = [{wch:4},{wch:28},{wch:16},{wch:18},{wch:10},{wch:8},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+
+  // Generate blob
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob  = new Blob([wbout], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  const file  = new File([blob], fname, { type: blob.type });
+
+  // Try Web Share API (Android Chrome, iOS Safari 15+)
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        title: 'Kenko1st Stock — ' + dateStr,
+        text:  items.length + ' items scanned',
+        files: [file],
+      });
+      showToast('✅ Shared!', 'success');
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user cancelled
+      // fall through to download
+    }
+  }
+
+  // Fallback: direct download
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href     = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('✅ Downloaded — share from Files app', 'success');
+}
+
+function copyForWhatsApp() {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('No data to copy', 'error'); return; }
+
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
+  const pcsItems = items.filter(i => i.unit !== 'kg');
+  const kgItems  = items.filter(i => i.unit === 'kg');
+  const pcsTotal = pcsItems.reduce((s,i) => s + i.qty, 0);
+  const kgTotal  = kgItems.reduce((s,i)  => s + i.qty, 0);
+
+  const lines = ['📦 *Kenko1st Stock Count*', '📅 ' + dateStr, ''];
+
+  // Group by category
+  const cats = [...new Set(items.map(i => i.category || 'Other'))].sort();
+  cats.forEach(cat => {
+    const catItems = items.filter(i => (i.category||'Other') === cat);
+    lines.push('*' + cat + '*');
+    catItems.forEach((item, i) => {
+      const qty = item.unit === 'kg'
+        ? item.qty.toFixed(3) + ' kg'
+        : item.qty + ' ' + (item.unit || 'pcs');
+      lines.push('  • ' + item.name + ' — ' + qty);
+    });
+    lines.push('');
+  });
+
+  lines.push('─────────────────');
+  if (kgTotal > 0) lines.push('Total (pcs): *' + pcsTotal + '*   Total (kg): *' + kgTotal.toFixed(3) + 'kg*');
+  else lines.push('Total qty: *' + pcsTotal + ' pcs*');
+  lines.push('Total item types: *' + items.length + '*');
+
+  const text = lines.join('\n');
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('✅ Copied! Paste in WhatsApp', 'success'))
+      .catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try {
+    document.execCommand('copy');
+    showToast('✅ Copied! Paste in WhatsApp', 'success');
+  } catch(e) {
+    showToast('Copy failed — select text manually', 'error');
+  }
+  document.body.removeChild(ta);
 }
 
 function exportExcel(autoShare) {
@@ -1633,14 +1761,14 @@ function exportExcel(autoShare) {
       }).then(() => showToast('✅ Shared!', 'success'))
         .catch(err => {
           // Fallback: WhatsApp web with text summary
-          fallbackWhatsApp(items, dateStr);
+          copyForWhatsApp();
         });
       return;
     }
   }
 
   if (autoShare) {
-    fallbackWhatsApp(items, dateStr);
+    copyForWhatsApp();
     return;
   }
 
@@ -1648,17 +1776,6 @@ function exportExcel(autoShare) {
   showToast('✅ Excel downloaded!', 'success');
 }
 
-function fallbackWhatsApp(items, dateStr) {
-  // Send a text summary via WhatsApp if file share not supported
-  const total = items.reduce((s,i) => s + i.qty, 0);
-  const lines = ['*Kenko1st Stock Count — ' + dateStr + '*', ''];
-  items.forEach((item,i) => {
-    lines.push((i+1) + '. ' + item.name + ' — *' + item.qty + ' ' + (item.unit||'pcs') + '*');
-  });
-  lines.push('', 'Total items: *' + items.length + '*  |  Total qty: *' + total + '*');
-  const msg = encodeURIComponent(lines.join('\n'));
-  window.open('https://wa.me/?text=' + msg, '_blank');
-}
 
 
 
@@ -1833,6 +1950,38 @@ function showToast(msg, type = 'info') {
   t.className = 'toast ' + type + ' show';
   toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
+
+// ═══ KEYBOARD DETECTION — Add button sticky above keyboard ═══
+(function() {
+  const SHRINK_THRESHOLD = 0.75; // viewport shrinks >25% = keyboard open
+  const initialHeight = window.innerHeight;
+
+  function onResize() {
+    const btn = document.getElementById('btn-add-stock');
+    if (!btn) return;
+    const ratio = window.visualViewport
+      ? window.visualViewport.height / initialHeight
+      : window.innerHeight / initialHeight;
+
+    if (ratio < SHRINK_THRESHOLD) {
+      // Keyboard is open — make button sticky at bottom of visible viewport
+      btn.classList.add('btn-add-sticky');
+      if (window.visualViewport) {
+        btn.style.bottom = (window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop) + 'px';
+      }
+    } else {
+      btn.classList.remove('btn-add-sticky');
+      btn.style.bottom = '';
+    }
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onResize);
+    window.visualViewport.addEventListener('scroll', onResize);
+  } else {
+    window.addEventListener('resize', onResize);
+  }
+})();
 
 // Enter key for manual input
 document.getElementById('manual-barcode').addEventListener('keydown', e => {
