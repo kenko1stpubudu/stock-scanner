@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Difference Report Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #151820;
+    --surface2: #1e2230;
+    --border: #2a2f3d;
+    --accent: #00e5a0;
+    --accent2: #ff6b4a;
+    --accent3: #4a9eff;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --plus: #00e5a0;
+    --minus: #ff6b4a;
+    --zero: #4a9eff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* Header */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .header-icon {
+    width: 44px; height: 44px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .header p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* Main Layout */
+  .main { padding: 40px; max-width: 1200px; margin: 0 auto; }
+
+  /* Upload Section */
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+
+  .upload-card {
+    background: var(--surface);
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    transition: all 0.2s;
+    cursor: pointer;
+    text-align: center;
+    position: relative;
+  }
+  .upload-card:hover { border-color: var(--accent); background: #1a1f2c; }
+  .upload-card.loaded {
+    border-style: solid;
+    border-color: var(--accent);
+    background: rgba(0,229,160,0.04);
+  }
+  .upload-card input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-label {
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--accent);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .upload-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .upload-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .upload-icon { font-size: 36px; margin-bottom: 12px; }
+  .upload-status {
+    margin-top: 12px;
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--accent);
+    display: none;
+  }
+  .upload-card.loaded .upload-status { display: block; }
+
+  /* Button */
+  .btn-run {
+    width: 100%;
+    padding: 16px;
+    background: var(--accent);
+    color: #0d0f14;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    margin-bottom: 32px;
+    letter-spacing: 0.3px;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn-run:hover { background: #00c98a; transform: translateY(-1px); }
+  .btn-run:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
+
+  .btn-clear {
+    padding: 16px 24px;
+    background: transparent;
+    color: var(--accent2);
+    border: 1.5px solid var(--accent2);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-clear:hover { background: rgba(255,107,74,0.1); }
+
+  /* Stats Bar */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+    display: none;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 26px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .stat-plus .stat-value { color: var(--plus); }
+  .stat-minus .stat-value { color: var(--minus); }
+  .stat-zero .stat-value { color: var(--zero); }
+  .stat-total .stat-value { color: var(--text); }
+
+  /* Table */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    display: none;
+  }
+  .table-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .table-title {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .table-count {
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    background: var(--surface2);
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+
+  /* Filter tabs */
+  .filter-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .tab-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn.active { background: var(--accent); color: #0d0f14; border-color: var(--accent); font-weight: 600; }
+  .tab-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+  .table-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead tr {
+    background: var(--surface2);
+  }
+  th {
+    padding: 12px 20px;
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 13px 20px;
+    border-bottom: 1px solid rgba(42,47,61,0.5);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .cell-barcode {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cell-name { font-weight: 500; max-width: 280px; }
+  .cell-cat {
+    font-size: 11px;
+    background: var(--surface2);
+    padding: 3px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .diff-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 7px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .diff-plus { background: rgba(0,229,160,0.1); color: var(--plus); }
+  .diff-minus { background: rgba(255,107,74,0.1); color: var(--minus); }
+  .diff-zero { background: rgba(74,158,255,0.1); color: var(--zero); }
+
+  /* Export buttons */
+  .export-bar {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    background: var(--surface2);
+  }
+  .btn-export {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+    transition: all 0.15s;
+    font-weight: 500;
+  }
+  .btn-export:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-export-primary {
+    background: var(--accent);
+    color: #0d0f14;
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+  .btn-export-primary:hover { background: #00c98a; color: #0d0f14; }
+
+  /* Empty / error state */
+  .msg-box {
+    text-align: center;
+    padding: 60px 40px;
+    color: var(--muted);
+  }
+  .msg-box .icon { font-size: 40px; margin-bottom: 14px; }
+  .msg-box p { font-size: 14px; line-height: 1.6; }
+
+  /* No match note */
+  .no-match-note {
+    display: none;
+    margin-bottom: 24px;
+    padding: 14px 20px;
+    background: rgba(255,107,74,0.08);
+    border: 1px solid rgba(255,107,74,0.25);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--accent2);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <a href="index.html" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:#fff;text-decoration:none;border-radius:8px;padding:6px 16px;font-size:13px;font-weight:600">← Scanner</a>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button id="cf-pull-btn" onclick="cfPullAndLoad()" style="background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">☁ Cloud Pull (BB)</button>
+      <span id="cf-pull-status" style="font-size:12px;color:rgba(255,255,255,0.7);font-family:monospace"></span>
+    </div>
+  </div>
+  <div class="header-icon">📊</div>
+  <div>
+    <h1>Stock Difference Report Tool</h1>
+    <p>AA = System Export &nbsp;·&nbsp; BB = Scanner (☁ Cloud Pull auto-load)</p>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="upload-grid">
+    <div class="upload-card" id="cardAA">
+      <input type="file" id="fileAA" accept=".xlsx,.xls">
+      <div class="upload-icon">🖥️</div>
+      <span class="upload-label">File 01</span>
+      <div class="upload-title">System (AA.xlsx)</div>
+      <div class="upload-desc">Product list — Column A: Barcode &nbsp;|&nbsp; Column I: System QTY</div>
+      <div class="upload-status" id="statusAA">✓ &nbsp;ලෝඩ් විය</div>
+    </div>
+    <div class="upload-card" id="cardBB">
+      <input type="file" id="fileBB" accept=".xlsx,.xls">
+      <div class="upload-icon">📡</div>
+      <span class="upload-label">File 02</span>
+      <div class="upload-title">Scanned (BB.xlsx)</div>
+      <div class="upload-desc">Stock count — Column D: Barcode &nbsp;|&nbsp; Column E: Scanned QTY</div>
+      <div class="upload-status" id="statusBB">✓ &nbsp;ලෝඩ් විය</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:12px;margin-bottom:32px">
+    <button class="btn-run" id="btnRun" disabled onclick="runAnalysis()" style="margin-bottom:0;flex:1">
+      <span>⚡</span> Difference ගණනය කරන්න
+    </button>
+    <button class="btn-clear" onclick="clearAll()">&#128465; Clear All</button>
+  </div>
+
+  <div class="no-match-note" id="noMatchNote"></div>
+
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card stat-total">
+      <div class="stat-label">Total Matched</div>
+      <div class="stat-value" id="statTotal">0</div>
+    </div>
+    <div class="stat-card stat-plus">
+      <div class="stat-label">+ Surplus</div>
+      <div class="stat-value" id="statPlus">0</div>
+    </div>
+    <div class="stat-card stat-minus">
+      <div class="stat-label">− Shortage</div>
+      <div class="stat-value" id="statMinus">0</div>
+    </div>
+    <div class="stat-card stat-zero">
+      <div class="stat-label">= Exact Match</div>
+      <div class="stat-value" id="statZero">0</div>
+    </div>
+  </div>
+
+  <div class="table-wrap" id="tableWrap">
+    <div class="table-header">
+      <div class="table-title">📦 <span>Difference Report</span></div>
+      <div class="table-count" id="tableCount">0 items</div>
+    </div>
+    <div class="filter-tabs">
+      <button class="tab-btn active" onclick="filterTable('all', this)">සියල්ල</button>
+      <button class="tab-btn" onclick="filterTable('plus', this)">+ Surplus</button>
+      <button class="tab-btn" onclick="filterTable('minus', this)">− Shortage</button>
+      <button class="tab-btn" onclick="filterTable('zero', this)">= Exact</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item Name</th>
+            <th>Category</th>
+            <th>Barcode</th>
+            <th>System QTY (AA)</th>
+            <th>Scanned QTY (BB)</th>
+            <th>Difference</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="msg-box" id="emptyMsg" style="display:none">
+        <div class="icon">🔎</div>
+        <p>ගැලපෙන ලකුණු නැත</p>
+      </div>
+    </div>
+    <div class="export-bar">
+      <button class="btn-export" onclick="exportCSV()">⬇ CSV Export</button>
+      <button class="btn-export btn-export-primary" onclick="exportXLSX()">⬇ Excel Export (.xlsx)</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let aaData = null, bbData = null, resultData = [];
+let currentFilter = 'all';
+
+// File load handlers
+document.getElementById('fileAA').addEventListener('change', e => loadFile(e, 'AA'));
+document.getElementById('fileBB').addEventListener('change', e => loadFile(e, 'BB'));
+
+function clearAll() {
+  aaData = null; bbData = null; resultData = []; currentFilter = 'all';
+  document.getElementById('fileAA').value = '';
+  document.getElementById('fileBB').value = '';
+  document.getElementById('cardAA').classList.remove('loaded');
+  document.getElementById('cardBB').classList.remove('loaded');
+  document.getElementById('statusAA').textContent = '✓ ලෝඩ් විය';
+  document.getElementById('statusBB').textContent = '✓ ලෝඩ් විය';
+  document.getElementById('btnRun').disabled = true;
+  document.getElementById('statsBar').style.display = 'none';
+  document.getElementById('tableWrap').style.display = 'none';
+  document.getElementById('noMatchNote').style.display = 'none';
+  document.getElementById('tableBody').innerHTML = '';
+}
+
+function loadFile(e, which) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const wb = XLSX.read(ev.target.result, { type: 'array' });
+    if (which === 'AA') {
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      aaData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      document.getElementById('cardAA').classList.add('loaded');
+      document.getElementById('statusAA').textContent = '✓  ' + file.name + ' (' + (aaData.length - 2) + ' rows)';
+    } else {
+      // BB: find "Stock Count" sheet or first sheet
+      let sheetName = wb.SheetNames.find(s => s.toLowerCase().includes('stock')) || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      bbData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      document.getElementById('cardBB').classList.add('loaded');
+      document.getElementById('statusBB').textContent = '✓  ' + file.name + ' (' + (bbData.length - 1) + ' rows)';
+    }
+    document.getElementById('btnRun').disabled = !(aaData && bbData);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function runAnalysis() {
+  resultData = [];
+
+  // AA: header row is index 1 (row 2), data from index 2
+  // Col A = index 0 (Barcode/Code), Col E = index 4 (Name), Col F = index 5 (Category), Col I = index 8 (QTY)
+  const aaMap = new Map();
+  for (let i = 2; i < aaData.length; i++) {
+    const row = aaData[i];
+    const bc = String(row[0] || '').trim();
+    if (!bc) continue;
+    const name = String(row[4] || '').trim();
+    const cat  = String(row[5] || '').trim();
+    const qty  = parseFloat(row[8]) || 0;
+    if (!aaMap.has(bc)) aaMap.set(bc, { name, cat, qty });
+  }
+
+  // BB: header row is index 0, data from index 1
+  // Col D = index 3 (Barcode), Col E = index 4 (Quantity)
+  // Skip non-barcode summary rows
+  const SKIP_LABELS = ['මුළු ප්‍රමාණය', 'export date','Total Quantity', 'total', 'subtotal'];
+  const bbMap = new Map();
+  for (let i = 1; i < bbData.length; i++) {
+    const row = bbData[i];
+    const bc = String(row[3] || '').trim();
+    if (!bc) continue;
+    // Skip known non-barcode label rows
+    if (SKIP_LABELS.some(lbl => bc.toLowerCase() === lbl.toLowerCase())) continue;
+    // Skip if barcode cell contains non-numeric/non-alphanumeric label text (longer than 30 chars)
+    if (bc.length > 30) continue;
+    const qty = parseFloat(row[4]);
+    if (isNaN(qty)) continue;
+    bbMap.set(bc, qty);
+  }
+
+  let matched = 0, unmatched = 0;
+  bbMap.forEach((bbQty, bc) => {
+    if (aaMap.has(bc)) {
+      const aa = aaMap.get(bc);
+      const diff = bbQty - aa.qty;
+      resultData.push({
+        name: aa.name,
+        cat: aa.cat,
+        barcode: bc,
+        aaQty: aa.qty,
+        bbQty: bbQty,
+        diff: diff
+      });
+      matched++;
+    } else {
+      unmatched++;
+    }
+  });
+
+  // Stats
+  const plus  = resultData.filter(r => r.diff > 0).length;
+  const minus = resultData.filter(r => r.diff < 0).length;
+  const zero  = resultData.filter(r => r.diff === 0).length;
+
+  document.getElementById('statTotal').textContent = resultData.length;
+  document.getElementById('statPlus').textContent  = plus;
+  document.getElementById('statMinus').textContent = minus;
+  document.getElementById('statZero').textContent  = zero;
+  document.getElementById('statsBar').style.display = 'grid';
+
+  if (unmatched > 0) {
+    const note = document.getElementById('noMatchNote');
+    note.style.display = 'block';
+    note.textContent = '⚠  BB excel එකේ ' + unmatched + ' barcode(s) AA excel එකේ හමු නොවිණි — ඒ rows skip කරන ලදී.';
+  }
+
+  currentFilter = 'all';
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.tab-btn').classList.add('active');
+  renderTable(resultData);
+  document.getElementById('tableWrap').style.display = 'block';
+}
+
+function renderTable(data) {
+  const body = document.getElementById('tableBody');
+  const empty = document.getElementById('emptyMsg');
+  document.getElementById('tableCount').textContent = data.length + ' items';
+  body.innerHTML = '';
+
+  if (data.length === 0) {
+    empty.style.display = 'block'; return;
+  }
+  empty.style.display = 'none';
+
+  data.forEach((r, i) => {
+    const cls = r.diff > 0 ? 'diff-plus' : r.diff < 0 ? 'diff-minus' : 'diff-zero';
+    const sign = r.diff > 0 ? '+' : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:12px">${i+1}</td>
+      <td class="cell-name">${r.name || '—'}</td>
+      <td><span class="cell-cat">${r.cat || '—'}</span></td>
+      <td class="cell-barcode">${r.barcode}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;text-align:right">${r.aaQty}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;text-align:right">${r.bbQty}</td>
+      <td><span class="diff-pill ${cls}">${sign}${r.diff}</span></td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function filterTable(type, btn) {
+  currentFilter = type;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  let filtered = resultData;
+  if (type === 'plus')  filtered = resultData.filter(r => r.diff > 0);
+  if (type === 'minus') filtered = resultData.filter(r => r.diff < 0);
+  if (type === 'zero')  filtered = resultData.filter(r => r.diff === 0);
+  renderTable(filtered);
+}
+
+function getFilteredData() {
+  if (currentFilter === 'plus')  return resultData.filter(r => r.diff > 0);
+  if (currentFilter === 'minus') return resultData.filter(r => r.diff < 0);
+  if (currentFilter === 'zero')  return resultData.filter(r => r.diff === 0);
+  return resultData;
+}
+
+function exportXLSX() {
+  const data = getFilteredData();
+  if (!data.length) return;
+
+  const wb = XLSX.utils.book_new();
+  const rows = [['Item Name', 'Category', 'Barcode', 'System QTY (AA)', 'Scanned QTY (BB)', 'Difference']];
+  data.forEach(r => rows.push([r.name, r.cat, r.barcode, r.aaQty, r.bbQty, r.diff]));
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 14 }
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Difference Report');
+  XLSX.writeFile(wb, 'Stock_Difference_Report.xlsx');
+}
+
+function exportCSV() {
+  const data = getFilteredData();
+  if (!data.length) return;
+  const headers = ['Item Name', 'Category', 'Barcode', 'System QTY', 'Scanned QTY', 'Difference'];
+  const csv = [headers.join(','), ...data.map(r =>
+    ['"' + (r.name||'').replace(/"/g,'""') + '"',
+     '"' + (r.cat||'').replace(/"/g,'""') + '"',
+     '"' + r.barcode + '"',
+     r.aaQty, r.bbQty, r.diff].join(',')
+  )].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Stock_Difference_Report.csv';
+  a.click();
+}
+
+// ════ CLOUDFLARE PULL ════
+async function cfPullAndLoad() {
+  const cfUrl = localStorage.getItem('cf_url') || '';
+  const cfKey = localStorage.getItem('cf_key') || 'kenko2024';
+  const btn    = document.getElementById('cf-pull-btn');
+  const status = document.getElementById('cf-pull-status');
+
+  if (!cfUrl) {
+    status.textContent = '❌ Scanner app ෙකෙ Cloudflare Connect කරන්න';
+    status.style.color = '#ff6b4a';
+    return;
+  }
+  btn.textContent = '⏳ Loading...';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch(cfUrl + '/pull', { headers: { 'X-Session-Key': cfKey } });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+
+    const binary = atob(d.xlsxBase64);
+    const bytes  = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const wb = XLSX.read(bytes.buffer, { type: 'array' });
+    let sn = wb.SheetNames.find(s => s.toLowerCase().includes('stock')) || wb.SheetNames[0];
+    const ws = wb.Sheets[sn];
+    bbData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    document.getElementById('cardBB').classList.add('loaded');
+    document.getElementById('statusBB').textContent = '✓  ' + d.filename + ' · ' + d.itemCount + ' items';
+    document.getElementById('btnRun').disabled = !(aaData && bbData);
+
+    status.textContent = '✅ ' + d.itemCount + ' items loaded';
+    status.style.color = '#00e5a0';
+    if (aaData && bbData) setTimeout(() => runAnalysis(), 400);
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    status.style.color = '#ff6b4a';
+  } finally {
+    btn.textContent = '☁ Cloud Pull (BB)';
+    btn.disabled = false;
+  }
+}
+
+</script>
+</body>
+</html>
