@@ -2739,6 +2739,99 @@ document.getElementById('manual-barcode').addEventListener('keydown', e => {
   if (e.key === 'Enter') processManual();
 });
 
+// ═══ BACK BUTTON PROTECTION ═══
+(function() {
+  history.pushState({ page: 'scanner' }, '', location.href);
+
+  window.addEventListener('popstate', function() {
+    history.pushState({ page: 'scanner' }, '', location.href);
+    if (Object.keys(stockData).length > 0) {
+      const confirmed = confirm(
+        '⚠️ Back button!\'\n\n' +
+        Object.keys(stockData).length + ' items scan කළ data තිබෙනවා.\n' +
+        'App එකෙන් ඉවත් වෙන්නද? Data නැති වෙයි!'
+      );
+      if (confirmed) history.go(-2);
+    }
+  });
+
+  window.addEventListener('beforeunload', function(e) {
+    if (Object.keys(stockData).length > 0) {
+      e.preventDefault();
+      e.returnValue = 'Scan කළ data ' + Object.keys(stockData).length + ' items තිබෙනවා.';
+      return e.returnValue;
+    }
+  });
+})();
+
+// ═══ KEYBOARD — Add button + qty input always visible ═══
+(function() {
+  const SHRINK = 0.75;
+  const initH  = window.innerHeight;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    .btn-add-sticky {
+      position: fixed !important;
+      left: 0 !important; right: 0 !important; bottom: 0 !important;
+      border-radius: 0 !important;
+      padding: 16px !important;
+      font-size: 15px !important;
+      z-index: 500 !important;
+      width: 100% !important;
+      box-shadow: 0 -4px 24px rgba(0,229,160,0.35);
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Give Add button an id if not already set
+  const addBtn = document.querySelector('.btn-add');
+  if (addBtn && !addBtn.id) addBtn.id = 'btn-add-stock';
+
+  function getActiveQtyInput() {
+    const rowKg = document.getElementById('row-kg');
+    if (rowKg && rowKg.style.display !== 'none') return document.getElementById('kg-input');
+    return document.getElementById('qty-input');
+  }
+
+  function onViewport() {
+    const btn  = document.getElementById('btn-add-stock');
+    const card = document.getElementById('result-card');
+    if (!btn || !card || !card.classList.contains('show')) return;
+
+    const vvH    = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const ratio  = vvH / initH;
+    const kbOpen = ratio < SHRINK;
+
+    if (kbOpen) {
+      const offset = window.visualViewport
+        ? Math.max(0, window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop)
+        : 0;
+      btn.classList.add('btn-add-sticky');
+      btn.style.bottom = offset + 'px';
+      const inp = getActiveQtyInput();
+      if (inp) setTimeout(() => inp.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+    } else {
+      btn.classList.remove('btn-add-sticky');
+      btn.style.bottom = '';
+    }
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onViewport);
+    window.visualViewport.addEventListener('scroll', onViewport);
+  } else {
+    window.addEventListener('resize', onViewport);
+  }
+
+  const resultCard = document.getElementById('result-card');
+  if (resultCard) {
+    new MutationObserver(onViewport).observe(resultCard, {
+      attributes: true, attributeFilter: ['class']
+    });
+  }
+})();
+
 
 </script>
 
