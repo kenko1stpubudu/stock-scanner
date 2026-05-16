@@ -1134,6 +1134,7 @@
   <div class="quick-actions">
     <button class="qa-btn qa-export" onclick="exportAndShare()">⬇️ Export Excel</button>
     <button class="qa-btn qa-share"  onclick="shareExcelFile()">📤 Share</button>
+    <button class="qa-btn" onclick="pushToCloud()" style="background:linear-gradient(135deg,#1a3a6a,#4a9eff);color:#fff">☁ Sync</button>
     <button class="qa-btn qa-clear"  onclick="clearAll()">🗑️ Clear All</button>
   </div>
 
@@ -1220,6 +1221,7 @@
       </table>
     </div>
     <button class="btn-export" onclick="exportExcel(false)">⬇️ Download Excel</button>
+    <button class="btn-export" onclick="pushToCloud()" style="background:linear-gradient(135deg,#1a3a6a,#4a9eff);margin-top:0" id="btn-cloud-push">☁ Diff Tool-ට Send කරන්න</button>
     <button class="btn-export" onclick="shareExcelFile()" style="background:linear-gradient(135deg,#075e54,#25d366);margin-top:0">📤 Share Excel (WhatsApp / Email)</button>
     <button class="btn-clear" onclick="clearAll()">🗑️ Clear All</button>
   </div>
@@ -2403,6 +2405,64 @@ async function cfPushData(wbout, filename, itemCount) {
   } catch(e) { console.error('CF push failed:', e); return false; }
 }
 
+
+// ════ DIRECT CLOUD PUSH (bypasses share flow) ════
+async function pushToCloud() {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('Items නෑ — scan කරන්න', 'error'); return; }
+
+  const btn = document.getElementById('btn-cloud-push');
+  if (btn) { btn.textContent = '⏳ Sending...'; btn.disabled = true; }
+
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g, '-');
+  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+
+  const ws_data = [
+    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
+    ...items.map((item, i) => [
+      i + 1, item.name, item.category || '', item.barcode,
+      item.unit === 'kg' ? parseFloat(item.qty.toFixed(3)) : item.qty,
+      item.unit || 'pcs', item.lastScan
+    ]),
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+  const CF_URL = 'https://mute-tree-2357.kenko1st-pubudu.workers.dev';
+  const CF_KEY = 'kenko2024';
+
+  try {
+    const bytes  = new Uint8Array(wbout);
+    let binary   = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binary);
+
+    const r = await fetch(CF_URL + '/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Key': CF_KEY },
+      body: JSON.stringify({
+        filename: fname,
+        itemCount: items.length,
+        timestamp: new Date().toISOString(),
+        xlsxBase64: b64,
+      }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast('☁ ' + items.length + ' items Diff Tool-ට send විය! ✅', 'success');
+    } else {
+      showToast('❌ Failed: ' + d.error, 'error');
+    }
+  } catch(e) {
+    showToast('❌ Network error: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.textContent = '☁ Diff Tool-ට Send කරන්න'; btn.disabled = false; }
+  }
+}
 function shareExcel() { shareExcelFile(); }
 
 async function shareExcelFile() {
