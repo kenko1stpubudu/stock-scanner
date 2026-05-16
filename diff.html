@@ -662,7 +662,7 @@ function exportCSV() {
 
 // ════ CLOUDFLARE PULL ════
 async function cfPullAndLoad() {
-  const cfUrl = localStorage.getItem('cf_url') || '';
+  const cfUrl = localStorage.getItem('cf_url') || 'https://mute-tree-2357.kenko1st-pubudu.workers.dev';
   const cfKey = localStorage.getItem('cf_key') || 'kenko2024';
   const btn    = document.getElementById('cf-pull-btn');
   const status = document.getElementById('cf-pull-status');
