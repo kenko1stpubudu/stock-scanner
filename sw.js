@@ -1,24 +1,19 @@
-// Service Worker v3 — force cache refresh
-const CACHE_NAME = 'stock-scanner-v3';
-const urlsToCache = ['/stock-scanner/', '/stock-scanner/index.html', '/stock-scanner/diff.html'];
+// v4 — fixed duplicate UI
+const CACHE = 'stock-scanner-v4';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
-  );
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
 
+// Network first — always fresh
 self.addEventListener('fetch', e => {
-  e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
-  );
+  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
 });
