@@ -249,6 +249,32 @@
   }
   .btn-add:active { transform: scale(0.98); opacity: 0.85; }
 
+  /* ── OUTLET SELECTOR ── */
+  .outlet-select {
+    background: var(--surface2, #1e2230);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 12px;
+    font-family: 'Syne', sans-serif;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .outlet-select:focus { border-color: var(--accent); }
+  .outlet-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: rgba(124,106,255,0.15);
+    border: 1px solid var(--accent2);
+    color: var(--accent2);
+    white-space: nowrap;
+  }
+
   /* ── MANUAL BARCODE ── */
   .manual-row {
     display: flex; gap: 8px;
@@ -1090,7 +1116,12 @@
 
 <div class="header">
   <div class="header-title">📦 Stock <span>Scanner</span></div>
-  <div class="header-count" id="total-badge">714 items</div>
+  <select class="outlet-select" id="outlet-select" onchange="updateOutlet()">
+    <option value="">-- Outlet --</option>
+    <option value="COL07">Colombo 07</option>
+    <option value="THAL">Thalawathugoda</option>
+  </select>
+  <div class="header-count" id="total-badge">0 items</div>
 </div>
 
 <div class="tabs">
@@ -1992,6 +2023,15 @@ let cameraActive  = false;
 let toastTimer;
 
 // ═══ TABS ═══
+
+// ════ OUTLET SELECTOR ════
+function updateOutlet() {
+  const sel = document.getElementById('outlet-select');
+  const name = sel.options[sel.selectedIndex].text;
+  if (name && name !== '-- Outlet --') {
+    showToast('📍 ' + name + ' selected', 'info');
+  }
+}
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['scan','stock','export'][i] === tab));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -2415,7 +2455,10 @@ async function pushToCloud() {
 
   const date    = new Date();
   const dateStr = date.toLocaleDateString('si-LK').replace(/\//g, '-');
-  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+  const outletEl = document.getElementById('outlet-select');
+  const outletName = outletEl ? outletEl.options[outletEl.selectedIndex].text : '';
+  const outletSuffix = outletName && outletName !== '-- Outlet --' ? '_' + outletName.replace(/\s+/g, '_') : '';
+  const fname   = 'Kenko_Stock_' + dateStr + outletSuffix + '.xlsx';
 
   const ws_data = [
     ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
@@ -2601,7 +2644,10 @@ function exportExcel(autoShare) {
 
   const date    = new Date();
   const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
-  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+  const outletEl2 = document.getElementById('outlet-select');
+  const outletName2 = outletEl2 ? outletEl2.options[outletEl2.selectedIndex].text : '';
+  const outletSuffix2 = outletName2 && outletName2 !== '-- Outlet --' ? '_' + outletName2.replace(/\s+/g, '_') : '';
+  const fname   = 'Kenko_Stock_' + dateStr + outletSuffix2 + '.xlsx';
 
   const ws_data = [
     ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
