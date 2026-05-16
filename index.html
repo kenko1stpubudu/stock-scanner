@@ -2657,6 +2657,3093 @@ function clearAll() {
     stockData = {};
     updateBadge(); renderStock(); renderPreview();
     showToast('🗑 Stock data cleared', 'error');
+    // Also clear Cloudflare KV
+    const CF_URL = 'https://mute-tree-2357.kenko1st-pubudu.workers.dev';
+    const CF_KEY = 'kenko2024';
+    fetch(CF_URL + '/clear', { method: 'DELETE', headers: { 'X-Session-Key': CF_KEY } })
+      .then(r => r.json())
+      .then(d => { if(d.ok) showToast('☁ Cloud data ත් clear විය', 'error'); })
+      .catch(() => {});
+  }
+}
+
+// ═══ CATALOG MODAL ═══
+let activeCatFilter = 'All';
+let sqbSelected = null;
+
+function openCatalog() {
+  document.getElementById('catalog-search').value = '';
+  activeCatFilter = 'All';
+  sqbSelected = null;
+  document.getElementById('sheet-qty-bar').style.display = 'none';
+
+  const cats = ['All', ...new Set(CATALOG.map(p => p.category))];
+  document.getElementById('cat-filter-row').innerHTML = cats.map(c =>
+    `<div class="cat-pill ${c === 'All' ? 'active' : ''}" onclick="setCatFilter('${c}',this)">${c}</div>`
+  ).join('');
+
+  renderCatalog();
+  document.getElementById('items-modal').classList.add('open');
+  setTimeout(() => document.getElementById('catalog-search').focus(), 300);
+}
+
+function setCatFilter(cat, el) {
+  activeCatFilter = cat;
+  document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  renderCatalog();
+}
+
+function renderCatalog() {
+  const q = (document.getElementById('catalog-search').value || '').toLowerCase();
+  const list = document.getElementById('catalog-list');
+
+  const filtered = CATALOG.filter(p => {
+    const matchCat = activeCatFilter === 'All' || p.category === activeCatFilter;
+    const matchQ   = !q || p.name.toLowerCase().includes(q) || p.barcode.includes(q);
+    return matchCat && matchQ;
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = `<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Results නැත</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(p => {
+    const stocked = stockData[p.barcode];
+    const isActive = sqbSelected && sqbSelected.barcode === p.barcode;
+    return `
+      <div class="catalog-item ${isActive ? 'active-select' : ''}" onclick="selectCatalogItem('${p.barcode}')">
+        <div class="cat-icon">${p.icon}</div>
+        <div class="cat-info">
+          <div class="cat-name">${p.name}</div>
+          <div class="cat-code">${p.barcode}</div>
+          <div class="cat-catbadge">${p.category}</div>
+        </div>
+        ${stocked ? `<div class="cat-stocked">✓ ${stocked.qty}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function selectCatalogItem(barcode) {
+  const product = CATALOG.find(p => p.barcode === barcode);
+  if (!product) return;
+  sqbSelected = { ...product };
+
+  const bar    = document.getElementById('sheet-qty-bar');
+  const isKg   = product.unit === 'kg';
+  const existing = stockData[barcode];
+
+  bar.style.display = 'flex';
+  document.getElementById('sqb-name').textContent = product.icon + ' ' + product.name;
+
+  // Toggle rows
+  document.getElementById('sqb-row-pcs').style.display    = isKg ? 'none' : 'flex';
+  document.getElementById('sqb-row-kg').style.display     = isKg ? 'flex' : 'none';
+  document.getElementById('sqb-kg-display').style.display = isKg ? 'block' : 'none';
+
+  if (isKg) {
+    const existKg = existing ? existing.qty : 0;
+    document.getElementById('sqb-kg').value = Math.floor(existKg) || 0;
+    document.getElementById('sqb-g').value  = Math.round((existKg % 1) * 1000) || 0;
+    sqbUpdateKg();
+  } else {
+    document.getElementById('sqb-qty').value = existing ? existing.qty : '';
+  }
+
+  renderCatalog();
+  bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function sqbUpdateKg() {
+  const kg = parseFloat(document.getElementById('sqb-kg').value) || 0;
+  const g  = parseFloat(document.getElementById('sqb-g').value)  || 0;
+  const total = kg + g / 1000;
+  document.getElementById('sqb-kg-display').textContent =
+    'මුළු: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
+}
+
+function sqbCarryG() {
+  let g = parseFloat(document.getElementById('sqb-g').value) || 0;
+  if (g >= 1000) {
+    const carry = Math.floor(g / 1000);
+    document.getElementById('sqb-kg').value =
+      (parseFloat(document.getElementById('sqb-kg').value) || 0) + carry;
+    document.getElementById('sqb-g').value = g % 1000;
+  }
+  sqbUpdateKg();
+}
+
+function sqbAdjust(delta) {
+  const inp = document.getElementById('sqb-qty');
+  inp.value = Math.max(0, parseInt(inp.value || 0) + delta);
+}
+
+function sqbAdd() {
+  if (!sqbSelected) return;
+  const isKg = sqbSelected.unit === 'kg';
+  let qty;
+  if (isKg) {
+    const kg = parseFloat(document.getElementById('sqb-kg').value) || 0;
+    const g  = parseFloat(document.getElementById('sqb-g').value)  || 0;
+    qty = parseFloat((kg + g / 1000).toFixed(3));
+  } else {
+    qty = parseInt(document.getElementById('sqb-qty').value) || 0;
+  }
+  const key = sqbSelected.barcode;
+
+  stockData[key] = {
+    ...sqbSelected,
+    qty,
+    lastScan: new Date().toLocaleString('si-LK')
+  };
+
+  updateBadge();
+  renderStock();
+  const qtyDisplay = isKg
+    ? qty.toFixed(3) + ' kg (' + (qty * 1000).toFixed(0) + ' g)'
+    : qty + ' ' + (sqbSelected.unit || 'pcs');
+  showToast('✅ ' + sqbSelected.name + ' — ' + qtyDisplay, 'success');
+
+  sqbSelected = null;
+  document.getElementById('sheet-qty-bar').style.display = 'none';
+  renderCatalog();
+}
+
+function closeModal() {
+  document.getElementById('items-modal').classList.remove('open');
+  sqbSelected = null;
+}
+function handleModalClick(e) { if (e.target === document.getElementById('items-modal')) closeModal(); }
+
+// ═══ UTILS ═══
+function updateBadge() {
+  const n = Object.keys(stockData).length;
+  document.getElementById('total-badge').textContent = n + (n === 1 ? ' item' : ' items');
+}
+
+function showToast(msg, type = 'info') {
+  clearTimeout(toastTimer);
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// Enter key for manual input
+document.getElementById('manual-barcode').addEventListener('keydown', e => {
+  if (e.key === 'Enter') processManual();
+});
+
+// ═══ BACK BUTTON PROTECTION ═══
+(function() {
+  history.pushState({ page: 'scanner' }, '', location.href);
+
+  window.addEventListener('popstate', function() {
+    history.pushState({ page: 'scanner' }, '', location.href);
+    if (Object.keys(stockData).length > 0) {
+      const confirmed = confirm(
+        '⚠️ Back button!\'\n\n' +
+        Object.keys(stockData).length + ' items scan කළ data තිබෙනවා.\n' +
+        'App එකෙන් ඉවත් වෙන්නද? Data නැති වෙයි!'
+      );
+      if (confirmed) history.go(-2);
+    }
+  });
+
+  window.addEventListener('beforeunload', function(e) {
+    if (Object.keys(stockData).length > 0) {
+      e.preventDefault();
+      e.returnValue = 'Scan කළ data ' + Object.keys(stockData).length + ' items තිබෙනවා.';
+      return e.returnValue;
+    }
+  });
+})();
+
+// ═══ KEYBOARD — Add button + qty input always visible ═══
+(function() {
+  const SHRINK = 0.75;
+  const initH  = window.innerHeight;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    .btn-add-sticky {
+      position: fixed !important;
+      left: 0 !important; right: 0 !important; bottom: 0 !important;
+      border-radius: 0 !important;
+      padding: 16px !important;
+      font-size: 15px !important;
+      z-index: 500 !important;
+      width: 100% !important;
+      box-shadow: 0 -4px 24px rgba(0,229,160,0.35);
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Give Add button an id if not already set
+  const addBtn = document.querySelector('.btn-add');
+  if (addBtn && !addBtn.id) addBtn.id = 'btn-add-stock';
+
+  function getActiveQtyInput() {
+    const rowKg = document.getElementById('row-kg');
+    if (rowKg && rowKg.style.display !== 'none') return document.getElementById('kg-input');
+    return document.getElementById('qty-input');
+  }
+
+  function onViewport() {
+    const btn  = document.getElementById('btn-add-stock');
+    const card = document.getElementById('result-card');
+    if (!btn || !card || !card.classList.contains('show')) return;
+
+    const vvH    = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const ratio  = vvH / initH;
+    const kbOpen = ratio < SHRINK;
+
+    if (kbOpen) {
+      const offset = window.visualViewport
+        ? Math.max(0, window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop)
+        : 0;
+      btn.classList.add('btn-add-sticky');
+      btn.style.bottom = offset + 'px';
+      const inp = getActiveQtyInput();
+      if (inp) setTimeout(() => inp.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+    } else {
+      btn.classList.remove('btn-add-sticky');
+      btn.style.bottom = '';
+    }
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onViewport);
+    window.visualViewport.addEventListener('scroll', onViewport);
+  } else {
+    window.addEventListener('resize', onViewport);
+  }
+
+  const resultCard = document.getElementById('result-card');
+  if (resultCard) {
+    new MutationObserver(onViewport).observe(resultCard, {
+      attributes: true, attributeFilter: ['class']
+    });
+  }
+})();
+
+// ── Catalog modal Add bar sticky above keyboard ──
+(function() {
+  const SHRINK = 0.75;
+  const initH  = window.innerHeight;
+
+  function onSqbViewport() {
+    const bar  = document.getElementById('sheet-qty-bar');
+    const modal = document.getElementById('items-modal');
+    if (!bar || !modal || !modal.classList.contains('open')) return;
+    if (bar.style.display === 'none') return;
+
+    const vvH   = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const ratio  = vvH / initH;
+    const kbOpen = ratio < SHRINK;
+
+    if (kbOpen) {
+      const offset = window.visualViewport
+        ? Math.max(0, window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop)
+        : 0;
+      bar.classList.add('sqb-sticky');
+      bar.style.bottom = offset + 'px';
+
+      // Scroll qty input into view
+      const inp = document.getElementById('sqb-qty') || document.getElementById('sqb-kg');
+      if (inp) setTimeout(() => inp.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+    } else {
+      bar.classList.remove('sqb-sticky');
+      bar.style.bottom = '';
+    }
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onSqbViewport);
+    window.visualViewport.addEventListener('scroll', onSqbViewport);
+  } else {
+    window.addEventListener('resize', onSqbViewport);
+  }
+
+  // Watch sheet-qty-bar visibility changes
+  const sqbBar = document.getElementById('sheet-qty-bar');
+  if (sqbBar) {
+    new MutationObserver(onSqbViewport).observe(sqbBar, {
+      attributes: true, attributeFilter: ['style']
+    });
+  }
+})();
+
+
+</script>
+
+<!-- ════ STOCK DIFFERENCE SECTION ════ -->
+<div id="diff-section">
+  <div class="diff-nav">
+    <button class="diff-nav-back" onclick="closeDiffSection()">← ස්කැනර් වෙත යන්න</button>
+    <span class="diff-auto-badge">📊 Scanned file auto-loaded</span>
+    <button class="cf-btn" id="cf-pull-btn" onclick="cfPullAndLoad()" style="margin-left:8px;background:#4a9eff">☁ Cloud Pull</button>
+    <span id="cf-pull-status" style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace"></span>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace" id="diff-auto-info"></span>
+  </div>
+  <div class="header">
+  <div class="header-icon">📊</div>
+  <div>
+    <h1>Stock Difference Report Tool</h1>
+    <p>AA Product List → BB Stock Count → Difference Export</p>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="upload-grid">
+    <div class="upload-card" id="cardAA">
+      <input type="file" id="fileAA" accept=".xlsx,.xls">
+      <div class="upload-icon">🖥️</div>
+      <span class="upload-label">File 01</span>
+      <div class="upload-title">System (AA.xlsx)</div>
+      <div class="upload-desc">Product list — Column A: Barcode &nbsp;|&nbsp; Column I: System QTY</div>
+      <div class="upload-status" id="statusAA">✓ &nbsp;ලෝඩ් විය</div>
+    </div>
+    <div class="upload-card" id="cardBB">
+      <input type="file" id="fileBB" accept=".xlsx,.xls">
+      <div class="upload-icon">📡</div>
+      <span class="upload-label">File 02</span>
+      <div class="upload-title">Scanned (BB.xlsx)</div>
+      <div class="upload-desc">Stock count — Column D: Barcode &nbsp;|&nbsp; Column E: Scanned QTY</div>
+      <div class="upload-status" id="statusBB">✓ &nbsp;ලෝඩ් විය</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:12px;margin-bottom:32px">
+    <button class="btn-run" id="btnRun" disabled onclick="runAnalysis()" style="margin-bottom:0;flex:1">
+      <span>⚡</span> Difference ගණනය කරන්න
+    </button>
+    <button class="btn-clear" onclick="clearAll()">&#128465; Clear All</button>
+  </div>
+
+  <div class="no-match-note" id="noMatchNote"></div>
+
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card stat-total">
+      <div class="stat-label">Total Matched</div>
+      <div class="stat-value" id="statTotal">0</div>
+    </div>
+    <div class="stat-card stat-plus">
+      <div class="stat-label">+ Surplus</div>
+      <div class="stat-value" id="statPlus">0</div>
+    </div>
+    <div class="stat-card stat-minus">
+      <div class="stat-label">− Shortage</div>
+      <div class="stat-value" id="statMinus">0</div>
+    </div>
+    <div class="stat-card stat-zero">
+      <div class="stat-label">= Exact Match</div>
+      <div class="stat-value" id="statZero">0</div>
+    </div>
+  </div>
+
+  <div class="table-wrap" id="tableWrap">
+    <div class="table-header">
+      <div class="table-title">📦 <span>Difference Report</span></div>
+      <div class="table-count" id="tableCount">714 items</div>
+    </div>
+    <div class="filter-tabs">
+      <button class="tab-btn active" onclick="filterTable('all', this)">සියල්ල</button>
+      <button class="tab-btn" onclick="filterTable('plus', this)">+ Surplus</button>
+      <button class="tab-btn" onclick="filterTable('minus', this)">− Shortage</button>
+      <button class="tab-btn" onclick="filterTable('zero', this)">= Exact</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item Name</th>
+            <th>Category</th>
+            <th>Barcode</th>
+            <th>System QTY (AA)</th>
+            <th>Scanned QTY (BB)</th>
+            <th>Difference</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="msg-box" id="emptyMsg" style="display:none">
+        <div class="icon">🔎</div>
+        <p>ගැලපෙන ලකුණු නැත</p>
+      </div>
+    </div>
+    <div class="export-bar">
+      <button class="btn-export" onclick="exportCSV()">⬇ CSV Export</button>
+      <button class="btn-export btn-export-primary" onclick="exportXLSX()">⬇ Excel Export (.xlsx)</button>
+    </div>
+  </div>
+
+</div>
+</div>
+
+</body>
+</html><!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Stock Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap');
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #161920;
+    --card: #1e2230;
+    --border: #2a2f3d;
+    --accent: #00e5a0;
+    --accent2: #7c6aff;
+    --warn: #ff6b35;
+    --text: #e8ecf4;
+    --muted: #6b7280;
+    --green: #00e5a0;
+    --red: #ff4d6d;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Syne', 'Noto Sans Sinhala', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-title { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+  .header-title span { color: var(--accent); }
+  .header-count {
+    background: var(--accent);
+    color: #000;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 12px 0;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── PAGES ── */
+  .page { display: none; flex: 1; overflow-y: auto; padding: 12px; }
+  .page.active { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── SCANNER PAGE ── */
+  .scan-area {
+    background: var(--card);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+  }
+  .scan-viewport {
+    width: 100%;
+    height: 200px;
+    background: #000;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  #scanner-container {
+    width: 100%; height: 100%;
+    position: absolute; inset: 0;
+  }
+  #scan-video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+    display: none;
+    position: absolute;
+    inset: 0;
+  }
+
+  .scan-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 5;
+  }
+  .scan-frame {
+    width: 70%; height: 70px;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    position: relative;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+  }
+  .scan-line {
+    position: absolute;
+    left: 4px; right: 4px; top: 50%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scanAnim 1.6s ease-in-out infinite;
+  }
+  @keyframes scanAnim {
+    0%,100% { top: 15%; opacity: 0.6; }
+    50%      { top: 85%; opacity: 1; }
+  }
+  .scan-placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 6px; color: var(--muted); font-size: 12px;
+    height: 100%;
+  }
+  .scan-placeholder .icon { font-size: 28px; }
+
+  .scan-info {
+    padding: 9px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .scan-status { font-size: 12px; color: var(--muted); }
+  .scan-status.active { color: var(--accent); }
+  .scan-status.found  { color: var(--green); font-weight: 700; }
+  .scan-status.error  { color: var(--red); }
+
+  .btn-scan {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .btn-scan:active { transform: scale(0.97); opacity: 0.85; }
+  .btn-scan.stop { background: var(--red); color: white; }
+
+  /* ── RESULT CARD ── */
+  .result-card {
+    background: var(--card);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .result-card.show { display: flex; }
+
+  .result-product {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .result-icon {
+    width: 42px; height: 42px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .result-name { font-size: 14px; font-weight: 800; }
+  .result-barcode { font-size: 10px; color: var(--muted); margin-top: 1px; font-family: monospace; }
+  .result-category { font-size: 10px; color: var(--accent2); font-weight: 700; margin-top: 2px; }
+
+  .stock-control {
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .stock-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stock-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .qty-btn {
+    width: 36px; height: 36px;
+    border-radius: 9px;
+    border: none;
+    font-size: 18px;
+    font-weight: 800;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.1s;
+    flex-shrink: 0;
+  }
+  .qty-btn:active { transform: scale(0.9); }
+  .qty-btn.minus { background: #2a1520; color: var(--red); }
+  .qty-btn.plus  { background: #0d2016; color: var(--green); }
+  .qty-input {
+    flex: 1;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 9px;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 800;
+    text-align: center;
+    padding: 6px;
+    font-family: 'Syne', sans-serif;
+  }
+  .qty-input:focus { outline: none; border-color: var(--accent); }
+  .unit-label {
+    font-size: 12px; color: var(--muted);
+    flex-shrink: 0; font-weight: 600;
+  }
+
+  .btn-add {
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    color: #000;
+    border: none;
+    border-radius: 11px;
+    padding: 11px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    width: 100%;
+    transition: opacity 0.2s, transform 0.15s;
+    letter-spacing: 0.3px;
+  }
+  .btn-add:active { transform: scale(0.98); opacity: 0.85; }
+
+  /* ── MANUAL BARCODE ── */
+  .manual-row {
+    display: flex; gap: 8px;
+  }
+  .manual-input {
+    flex: 1;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-size: 14px;
+    padding: 11px 14px;
+    font-family: monospace;
+  }
+  .manual-input:focus { outline: none; border-color: var(--accent2); }
+  .btn-manual {
+    background: var(--accent2);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 11px 18px;
+    font-weight: 800;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-manual:active { opacity: 0.8; }
+
+  /* ── QUICK ACTION BAR ── */
+  .quick-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+  .qa-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 11px 6px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    text-align: center;
+    transition: opacity 0.2s, transform 0.15s;
+    font-family: 'Syne','Noto Sans Sinhala',sans-serif;
+    letter-spacing: 0.2px;
+  }
+  .qa-btn:active { transform: scale(0.96); opacity: 0.8; }
+  .qa-export { background: linear-gradient(135deg,#1a6640,var(--accent)); color:#000; }
+  .qa-share  { background: linear-gradient(135deg,#075e54,#25d366); color:#fff; }
+  .qa-clear  { background: #1a0d10; color: var(--red); border: 1px solid #3d1520; }
+
+  .btn-browse {
+    width: 100%;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 700;
+    padding: 13px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: border-color 0.2s, background 0.2s;
+    font-family: 'Syne', 'Noto Sans Sinhala', sans-serif;
+  }
+  .btn-browse:active { border-color: var(--accent2); background: rgba(124,106,255,0.08); }
+  .browse-count {
+    margin-left: auto;
+    background: var(--accent2);
+    color: white;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  /* ── NOT FOUND ── */
+  .not-found-card {
+    background: #1a0d10;
+    border: 1px solid #3d1520;
+    border-radius: 12px;
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .not-found-card.show { display: flex; }
+  .not-found-title { color: var(--red); font-weight: 800; font-size: 14px; }
+  .not-found-code { font-size: 12px; color: var(--muted); font-family: monospace; }
+  .nf-input {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 14px;
+    padding: 10px 12px;
+    font-family: 'Syne', 'Noto Sans Sinhala', sans-serif;
+    width: 100%;
+  }
+  .nf-input:focus { outline: none; border-color: var(--red); }
+  .nf-row { display: flex; gap: 8px; }
+  .btn-nf-add {
+    flex: 1; background: var(--red); color: white;
+    border: none; border-radius: 10px;
+    padding: 11px; font-weight: 800; font-size: 13px;
+    cursor: pointer;
+  }
+  .btn-nf-skip {
+    background: var(--border); color: var(--muted);
+    border: none; border-radius: 10px;
+    padding: 11px 16px; font-weight: 700; font-size: 13px;
+    cursor: pointer;
+  }
+
+  /* ── STOCK PAGE ── */
+  .stock-summary {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .summary-card {
+    background: var(--card);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 14px;
+  }
+  .summary-val { font-size: 26px; font-weight: 800; }
+  .summary-val.green { color: var(--accent); }
+  .summary-val.purple { color: var(--accent2); }
+  .summary-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 600; text-transform: uppercase; }
+
+  .search-bar {
+    display: flex;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+  }
+  .search-bar input {
+    flex: 1; background: none; border: none;
+    color: var(--text); font-size: 14px;
+    padding: 11px 0;
+    font-family: 'Syne', sans-serif;
+  }
+  .search-bar input:focus { outline: none; }
+  .search-icon { color: var(--muted); font-size: 16px; }
+
+  .stock-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .stock-item {
+    background: var(--card);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.2s;
+  }
+  .stock-item:active { border-color: var(--accent); }
+  .item-icon {
+    width: 42px; height: 42px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #1e2a44, #2a3650);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-barcode { font-size: 10px; color: var(--muted); font-family: monospace; margin-top: 1px; }
+  .item-qty {
+    text-align: right; flex-shrink: 0;
+  }
+  .qty-val { font-size: 20px; font-weight: 800; }
+  .qty-unit { font-size: 10px; color: var(--muted); }
+
+  .edit-btn {
+    width: 32px; height: 32px;
+    background: var(--border);
+    border: none; border-radius: 8px;
+    color: var(--muted); font-size: 14px;
+    cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .edit-btn:active { background: var(--accent2); color: white; }
+
+  .del-btn {
+    width: 32px; height: 32px;
+    background: #1a0d10;
+    border: none; border-radius: 8px;
+    color: var(--red); font-size: 14px;
+    cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .empty-state .emoji { font-size: 40px; margin-bottom: 10px; }
+
+  /* ── EXPORT PAGE ── */
+  .export-card {
+    background: var(--card);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .export-title { font-size: 15px; font-weight: 800; }
+  .export-sub { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .preview-table {
+    border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .preview-table table {
+    width: 100%; border-collapse: collapse;
+    font-size: 12px;
+  }
+  .preview-table th {
+    background: var(--bg);
+    padding: 9px 12px;
+    text-align: left;
+    color: var(--muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.4px;
+  }
+  .preview-table td {
+    padding: 9px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .preview-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .btn-export {
+    background: linear-gradient(135deg, #1a6640, var(--accent));
+    color: #000;
+    border: none;
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: opacity 0.2s;
+    letter-spacing: 0.3px;
+  }
+  .btn-export:active { opacity: 0.85; }
+
+  .btn-clear {
+    background: #1a0d10;
+    color: var(--red);
+    border: 1px solid #3d1520;
+    border-radius: 12px;
+    padding: 13px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    width: 100%;
+    transition: opacity 0.2s;
+  }
+  .btn-clear:active { opacity: 0.7; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 13px; font-weight: 700;
+    z-index: 999;
+    transition: transform 0.3s, opacity 0.3s;
+    opacity: 0;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error   { border-color: var(--red);   color: var(--red);   }
+  .toast.info    { border-color: var(--accent2); color: var(--accent2); }
+
+  /* ── ITEMS LIST MODAL ── */
+  .items-modal {
+    display: none;
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.7);
+    align-items: flex-end;
+  }
+  .items-modal.open { display: flex; }
+  .items-sheet {
+    background: var(--surface);
+    border-radius: 22px 22px 0 0;
+    width: 100%; max-height: 88vh;
+    display: flex; flex-direction: column;
+    animation: slideUp 0.25s ease;
+    overflow: hidden;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .sheet-header {
+    background: var(--surface);
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .sheet-title { font-size: 15px; font-weight: 800; }
+  .sheet-close {
+    background: var(--border); border: none; color: var(--text);
+    width: 30px; height: 30px; border-radius: 50%;
+    font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sheet-search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sheet-search input {
+    flex: 1; background: none; border: none;
+    color: var(--text); font-size: 14px;
+    font-family: 'Syne','Noto Sans Sinhala',sans-serif;
+  }
+  .sheet-search input:focus { outline: none; }
+  .cat-filter-row {
+    display: flex; gap: 6px; padding: 8px 14px;
+    overflow-x: auto; flex-shrink: 0;
+    scrollbar-width: none;
+  }
+  .cat-filter-row::-webkit-scrollbar { display: none; }
+  .cat-pill {
+    background: var(--card); border: 1.5px solid var(--border);
+    color: var(--muted); font-size: 11px; font-weight: 700;
+    padding: 5px 12px; border-radius: 20px;
+    white-space: nowrap; cursor: pointer;
+    transition: all 0.15s; flex-shrink: 0;
+    font-family: 'Syne', sans-serif;
+  }
+  .cat-pill.active { background: var(--accent2); border-color: var(--accent2); color: white; }
+  #catalog-list { overflow-y: auto; flex: 1; }
+  .catalog-item {
+    padding: 11px 18px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .catalog-item.active-select { background: rgba(124,106,255,0.12); border-left: 3px solid var(--accent2); }
+  .catalog-item:active { background: rgba(255,255,255,0.04); }
+  .cat-icon { font-size: 22px; width: 36px; text-align: center; flex-shrink:0; }
+  .cat-info { flex: 1; min-width:0; }
+  .cat-name { font-size: 13px; font-weight: 700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cat-code { font-size: 10px; color: var(--muted); font-family: monospace; margin-top:1px; }
+  .cat-catbadge { font-size: 10px; color: var(--accent2); font-weight:700; margin-top:2px; }
+  .cat-stocked { font-size: 11px; color: var(--accent); font-weight:800; flex-shrink:0; }
+
+  /* qty bottom bar inside modal */
+  .sheet-qty-bar {
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+    flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 10px;
+    animation: slideUp 0.2s ease;
+  }
+  /* Keyboard open — pin Add bar above keyboard */
+  .sqb-sticky {
+    position: fixed !important;
+    left: 0; right: 0;
+    z-index: 600;
+    border-radius: 0 !important;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
+  }
+  .sqb-name { font-size: 13px; font-weight: 800; color: var(--accent2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sqb-controls { display: flex; gap: 10px; align-items: center; }
+  .sqb-input { flex:1; }
+  .sqb-add {
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    color: #000; border: none; border-radius: 12px;
+    padding: 12px; font-weight: 800; font-size: 14px;
+    cursor: pointer; width: 100%;
+    font-family: 'Syne','Noto Sans Sinhala',sans-serif;
+  }
+  .sqb-add:active { opacity: 0.85; }
+
+
+  /* ════ DIFF TOOL SECTION ════ */
+  #diff-section {
+    display: none;
+    border-top: 2px solid var(--border);
+    margin-top: 0;
+    padding-top: 0;
+  }
+  #diff-section.visible { display: block; }
+  .diff-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .diff-nav-back {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .diff-nav-back:hover { border-color: var(--accent); color: var(--accent); }
+  .diff-auto-badge {
+    background: rgba(0,229,160,0.12);
+    border: 1px solid rgba(0,229,160,0.35);
+    color: var(--accent);
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.5px;
+    border-radius: 20px;
+    padding: 3px 10px;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #151820;
+    --surface2: #1e2230;
+    --border: #2a2f3d;
+    --accent: #00e5a0;
+    --accent2: #ff6b4a;
+    --accent3: #4a9eff;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --plus: #00e5a0;
+    --minus: #ff6b4a;
+    --zero: #4a9eff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* Header */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .header-icon {
+    width: 44px; height: 44px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .header p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* Main Layout */
+  .main { padding: 40px; max-width: 1200px; margin: 0 auto; }
+
+  /* Upload Section */
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+
+  .upload-card {
+    background: var(--surface);
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    transition: all 0.2s;
+    cursor: pointer;
+    text-align: center;
+    position: relative;
+  }
+  .upload-card:hover { border-color: var(--accent); background: #1a1f2c; }
+  .upload-card.loaded {
+    border-style: solid;
+    border-color: var(--accent);
+    background: rgba(0,229,160,0.04);
+  }
+  .upload-card input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-label {
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--accent);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .upload-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .upload-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .upload-icon { font-size: 36px; margin-bottom: 12px; }
+  .upload-status {
+    margin-top: 12px;
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--accent);
+    display: none;
+  }
+  .upload-card.loaded .upload-status { display: block; }
+
+  /* Button */
+  .btn-run {
+    width: 100%;
+    padding: 16px;
+    background: var(--accent);
+    color: #0d0f14;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    margin-bottom: 32px;
+    letter-spacing: 0.3px;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn-run:hover { background: #00c98a; transform: translateY(-1px); }
+  .btn-run:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
+
+  .btn-clear {
+    padding: 16px 24px;
+    background: transparent;
+    color: var(--accent2);
+    border: 1.5px solid var(--accent2);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-clear:hover { background: rgba(255,107,74,0.1); }
+
+  /* Stats Bar */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+    display: none;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 26px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .stat-plus .stat-value { color: var(--plus); }
+  .stat-minus .stat-value { color: var(--minus); }
+  .stat-zero .stat-value { color: var(--zero); }
+  .stat-total .stat-value { color: var(--text); }
+
+  /* Table */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    display: none;
+  }
+  .table-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .table-title {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .table-count {
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    background: var(--surface2);
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+
+  /* Filter tabs */
+  .filter-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .tab-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn.active { background: var(--accent); color: #0d0f14; border-color: var(--accent); font-weight: 600; }
+  .tab-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+  .table-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead tr {
+    background: var(--surface2);
+  }
+  th {
+    padding: 12px 20px;
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 13px 20px;
+    border-bottom: 1px solid rgba(42,47,61,0.5);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .cell-barcode {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cell-name { font-weight: 500; max-width: 280px; }
+  .cell-cat {
+    font-size: 11px;
+    background: var(--surface2);
+    padding: 3px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .diff-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 7px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .diff-plus { background: rgba(0,229,160,0.1); color: var(--plus); }
+  .diff-minus { background: rgba(255,107,74,0.1); color: var(--minus); }
+  .diff-zero { background: rgba(74,158,255,0.1); color: var(--zero); }
+
+  /* Export buttons */
+  .export-bar {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    background: var(--surface2);
+  }
+  .btn-export {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+    transition: all 0.15s;
+    font-weight: 500;
+  }
+  .btn-export:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-export-primary {
+    background: var(--accent);
+    color: #0d0f14;
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+  .btn-export-primary:hover { background: #00c98a; color: #0d0f14; }
+
+  /* Empty / error state */
+  .msg-box {
+    text-align: center;
+    padding: 60px 40px;
+    color: var(--muted);
+  }
+  .msg-box .icon { font-size: 40px; margin-bottom: 14px; }
+  .msg-box p { font-size: 14px; line-height: 1.6; }
+
+  /* No match note */
+  .no-match-note {
+    display: none;
+    margin-bottom: 24px;
+    padding: 14px 20px;
+    background: rgba(255,107,74,0.08);
+    border: 1px solid rgba(255,107,74,0.25);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--accent2);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+
+  /* ── Cloudflare Sync Settings ── */
+  .cf-setup-bar {
+    background: linear-gradient(135deg, rgba(249,130,49,0.1), rgba(249,130,49,0.05));
+    border: 1px solid rgba(249,130,49,0.3);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .cf-setup-bar.connected {
+    background: linear-gradient(135deg, rgba(0,229,160,0.1), rgba(0,229,160,0.05));
+    border-color: rgba(0,229,160,0.3);
+  }
+  .cf-setup-bar input {
+    flex: 1;
+    min-width: 180px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 7px 12px;
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .cf-setup-bar input:focus { outline: none; border-color: var(--accent); }
+  .cf-btn {
+    background: #f98231;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .cf-btn:hover { background: #e0721f; }
+  .cf-btn.connected { background: var(--accent); color: #000; }
+  .cf-status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .cf-status-dot.ok  { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .cf-status-dot.err { background: var(--accent2); }
+  .cf-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">📦 Stock <span>Scanner</span></div>
+  <div class="header-count" id="total-badge">714 items</div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('scan')">📷 Scan</div>
+  <div class="tab" onclick="switchTab('stock')">📋 Stock</div>
+  <div class="tab" onclick="switchTab('export')">📊 Export</div>
+</div>
+
+<!-- ═══ SCAN PAGE ═══ -->
+<div class="page active" id="page-scan">
+
+  <div class="scan-area">
+    <div class="scan-viewport">
+      <div id="scanner-container">
+        <video id="scan-video" autoplay muted playsinline></video>
+        <div class="scan-placeholder" id="scan-placeholder">
+          <div class="icon">📷</div>
+          <div>Camera start කරන්න</div>
+        </div>
+      </div>
+      <div class="scan-overlay" id="scan-overlay" style="display:none">
+        <div class="scan-frame"><div class="scan-line"></div></div>
+      </div>
+    </div>
+    <div class="scan-info">
+      <div class="scan-status" id="scan-status">Camera off</div>
+      <button class="btn-scan" id="btn-camera" onclick="toggleCamera()">📷 Camera On</button>
+    </div>
+  </div>
+
+  <div class="manual-row">
+    <input class="manual-input" id="manual-barcode" placeholder="Barcode manually type කරන්න..." inputmode="numeric">
+    <button class="btn-manual" onclick="processManual()">Search</button>
+  </div>
+
+  <button class="btn-browse" onclick="openCatalog()">
+    📋 <span>Catalog Browse කරන්න</span>
+    <span class="browse-count" id="browse-count">714 items</span>
+  </button>
+
+  <div class="quick-actions">
+    <button class="qa-btn qa-export" onclick="exportAndShare()">⬇️ Export Excel</button>
+    <button class="qa-btn" onclick="pushToCloud()" style="background:linear-gradient(135deg,#1a3a6a,#4a9eff);color:#fff">☁ Diff Sync</button>
+    <button class="qa-btn qa-clear"  onclick="clearAll()">🗑️ Clear All</button>
+  </div>
+
+  <div class="result-card" id="result-card">
+    <div class="result-product">
+      <div class="result-icon" id="res-icon">📦</div>
+      <div>
+        <div class="result-name" id="res-name">–</div>
+        <div class="result-barcode" id="res-barcode">–</div>
+        <div class="result-category" id="res-category">–</div>
+      </div>
+    </div>
+    <div class="stock-control">
+      <div class="stock-label" id="stock-label">ස්ටොක් ප්‍රමාණය</div>
+      <!-- Standard qty row (pcs items) -->
+      <div class="stock-row" id="row-pcs">
+        <button class="qty-btn minus" onclick="adjustQty(-1)">−</button>
+        <input class="qty-input" id="qty-input" type="number" value="" min="0" inputmode="numeric" placeholder="0" onfocus="this.select()">
+        <button class="qty-btn plus" onclick="adjustQty(1)">+</button>
+        <span class="unit-label" id="unit-label">Units</span>
+      </div>
+      <!-- Kg/g row (Raw Material items) -->
+      <div class="stock-row" id="row-kg" style="display:none;flex-wrap:wrap;gap:6px;">
+        <input class="qty-input" id="kg-input" type="number" value="0" min="0" step="0.001" onfocus="this.select()"
+               inputmode="decimal" placeholder="kg" style="width:70px">
+        <span class="unit-label" style="align-self:center">kg</span>
+        <span class="unit-label" style="align-self:center;color:var(--muted)">+</span>
+        <input class="qty-input" id="g-input" type="number" value="0" min="0" max="999" step="1" onfocus="this.select()"
+               inputmode="numeric" placeholder="g" style="width:60px">
+        <span class="unit-label" style="align-self:center">g</span>
+      </div>
+      <div id="kg-display" style="display:none;font-size:12px;color:var(--muted);margin-top:2px;text-align:center"></div>
+    </div>
+    <button class="btn-add" onclick="addToStock()">✅ Stock එකට Add කරන්න</button>
+  </div>
+
+  <div class="not-found-card" id="not-found-card">
+    <div class="not-found-title">❌ Barcode හඳුනාගත නොහැකි විය</div>
+    <div class="not-found-code" id="nf-barcode">–</div>
+    <input class="nf-input" id="nf-name" placeholder="Item නම ඇතුළු කරන්න...">
+    <div class="nf-row">
+      <button class="btn-nf-add" onclick="addUnknown()">+ Add කරන්න</button>
+      <button class="btn-nf-skip" onclick="skipUnknown()">Skip</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ STOCK PAGE ═══ -->
+<div class="page" id="page-stock">
+  <div class="stock-summary">
+    <div class="summary-card">
+      <div class="summary-val green" id="s-items">0</div>
+      <div class="summary-lbl">Item වර්ග</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-val purple" id="s-total">0</div>
+      <div class="summary-lbl">මුළු ප්‍රමාණය</div>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <span class="search-icon">🔍</span>
+    <input placeholder="Search..." id="search-input" oninput="renderStock()">
+  </div>
+
+  <div class="stock-list" id="stock-list">
+    <div class="empty-state">
+      <div class="emoji">📦</div>
+      <div>Scan කළ items මෙහි දිස් වේ</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EXPORT PAGE ═══ -->
+<div class="page" id="page-export">
+  <div class="export-card">
+    <div class="export-title">📊 Excel Export</div>
+    <div class="export-sub">සියලුම scanned items Excel file (.xlsx) ලෙස download කරගන්නට පහත button click කරන්න.</div>
+    <div class="preview-table" id="export-preview">
+      <table>
+        <thead><tr><th>#</th><th>Item Name</th><th>Barcode</th><th>Qty</th><th>Scanned At</th></tr></thead>
+        <tbody id="preview-body"><tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No data yet</td></tr></tbody>
+      </table>
+    </div>
+    <button class="btn-export" onclick="exportExcel(false)">⬇️ Download Excel</button>
+    <button class="btn-export" onclick="pushToCloud()" style="background:linear-gradient(135deg,#1a3a6a,#4a9eff);margin-top:0" id="btn-cloud-push">☁ Diff Tool-ට Send කරන්න</button>
+
+    <button class="btn-clear" onclick="clearAll()">🗑️ Clear All</button>
+  </div>
+</div>
+
+<!-- Items Catalog Modal -->
+<div class="items-modal" id="items-modal" onclick="handleModalClick(event)">
+  <div class="items-sheet">
+    <div class="sheet-header">
+      <div class="sheet-title">📋 Catalog</div>
+      <button class="sheet-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="sheet-search">
+      <span>🔍</span>
+      <input id="catalog-search" placeholder="Item search කරන්න..." oninput="renderCatalog()" autocomplete="off">
+    </div>
+    <div class="cat-filter-row" id="cat-filter-row"></div>
+    <div id="catalog-list"></div>
+    <div class="sheet-qty-bar" id="sheet-qty-bar" style="display:none">
+      <div class="sqb-name" id="sqb-name">–</div>
+      <!-- pcs row -->
+      <div class="sqb-controls" id="sqb-row-pcs">
+        <button class="qty-btn minus" onclick="sqbAdjust(-1)">−</button>
+        <input class="qty-input sqb-input" id="sqb-qty" type="number" value="" min="0" inputmode="numeric" placeholder="0" onfocus="this.select()">
+        <button class="qty-btn plus" onclick="sqbAdjust(1)">+</button>
+      </div>
+      <!-- kg/g row -->
+      <div class="sqb-controls" id="sqb-row-kg" style="display:none;flex-wrap:wrap;gap:6px;">
+        <input class="qty-input" id="sqb-kg" type="number" value="0" min="0" step="0.001" onfocus="this.select()"
+               inputmode="decimal" placeholder="kg" style="width:65px" oninput="sqbUpdateKg()">
+        <span class="unit-label" style="align-self:center">kg</span>
+        <span style="align-self:center;color:var(--muted)">+</span>
+        <input class="qty-input" id="sqb-g" type="number" value="0" min="0" max="999" step="1" onfocus="this.select()"
+               inputmode="numeric" placeholder="g" style="width:55px" oninput="sqbCarryG()">
+        <span class="unit-label" style="align-self:center">g</span>
+      </div>
+      <div id="sqb-kg-display" style="display:none;font-size:11px;color:var(--muted);text-align:center;width:100%"></div>
+      <button class="sqb-add" onclick="sqbAdd()">✅ Add කරන්න</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══ PRODUCT CATALOG ═══
+// ← ඔබේ items මෙහි add කරන්න (barcode, name, icon, unit)
+const CATALOG = [
+  { barcode:'0000026', name:'BURNT CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'0000028', name:'DEVILLED CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'0000029', name:'Pistachio 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00001', name:'Lunuwila Powder 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000010', name:'Amla Nut 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000011', name:'Rasakinda Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000012', name:'Yakinaran Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000013', name:'Soursop Leaves Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000014', name:'Neeramulliya Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000015', name:'Heenbovitiya Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000016', name:'Kothalahimbutu Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000017', name:'Katupila Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000018', name:'Iramusu Powder 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000019', name:'Thulsi Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00002', name:'Amla Powder 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000020', name:'Papaya Leaves Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000021', name:'Polpala Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000022', name:'Ranawara Flower Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000023', name:'Velpenela Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000024', name:'Thebu Powder 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000025', name:'Iramusu TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000026', name:'Beli Fruit TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000027', name:'Thippili TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000028', name:'Amla TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000029', name:'Aralu TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00003', name:'Aralu Nut 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000030', name:'Polpala TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000031', name:'Ginger TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000032', name:'Lime Peel TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000033', name:'Aswenna TBC 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00008', name:'AGUNAKOLA RICE FLOUR 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00009', name:'Bulu Nut 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'0001', name:'Silicagel 2g', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'000123', name:'Chocolate 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000125', name:'SALT AND PEPPER CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000126', name:'CHILLI GARLIC CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000127', name:'GARLIC CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000128', name:'CHICKPEA  1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00013', name:'AMIRON EGGS PACK (6 EGGS)', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'000131', name:'DRY BANANA 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000134', name:'DRY WATERMELON 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000135', name:'GINGER POWDER 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000138', name:'CINNAMON POWDER 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000141', name:'Goat Milk Bottle 190ml', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'000142', name:'Sticker Label Goat Milk', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'000143', name:'KHALAS DATES 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'000146', name:'Dry Sprat 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00016', name:'APCCO BALL CHEESE', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'00017', name:'APCCO DAIRIES CURD 500G', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'00019', name:'APCCO DAIRIES MILK 500ML', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'000558', name:'CEYLON COFFEE POWER MEDIUM 100G', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'0006', name:'Roasted Peanuts 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00078', name:'DRINKING YOGHURT LOW SUGAR', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'00079', name:'DRINKING YOGHURT NO SUGAR 200ML', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'00091', name:'GRAVITY 250ML MCT OIL', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00092', name:'GRAVITY 375ML EVCO', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00095', name:'GRAVITY EVCO 200ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00098', name:'GRAVITY MCT OIL 100ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00118', name:'JAYADI GRAINS WHITE RICE FLOUR 250G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'00129', name:'JAYADI RED RICE FLOUR 250G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'002', name:'Black Seeds (Black Cumin Seeds) 50g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'00253', name:'KENKO1ST FREE RANGE EGGS PACK', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4793002034031', name:'Helayo Bee Honey Garlic', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'004', name:'kuruluthuda rice 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00400', name:'KENKO1ST WOOD PLATE', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00416', name:'LITTLE TS OVEN ROAST PEANUT 150G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'00421', name:'MAS CURED BEEF SLICE', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00423', name:'MAS MEAT CHICKEN SATAY 20', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00424', name:'MAS MEAT CHICKEN SKEWERS(YAKITORI)', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00431', name:'MAS MINCED BEEF 500G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00432', name:'MAS MINCED CHICKEN 500G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00433', name:'MAS MINCED PORK 500G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00439', name:'MIRACLE CENTRIFUGED 750ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00441', name:'MIRACLE COCONUT SUGAR 200G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'603803995841', name:'MIRACLE EVCO 500ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00453', name:'MIRACLE VCO 225ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00464', name:'MOONSHADOW BABY SOAP', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'00465', name:'MOONSHADOW DISHWASH BAR', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'00466', name:'MOONSHADOW FACIAL BAR', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'00467', name:'MOONSHADOW LAUNDRY BAR', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'00468', name:'MOONSHADOW LAUNDRY POWDER', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'00469', name:'MOONSHADOW SHAMPOO BAR', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'005', name:'Suwandal 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00503', name:'NIMK JACKFRUIT COOKIES 200G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'00646', name:'RANKETHA EGGS PACK', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00664', name:'SERENDIB CHOCOLATE 60G 100% COCOA', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'00665', name:'SERENDIB CHOCOLATE 60G COCOA 70%', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'00666', name:'SERENDIB CHOCOLATE 100G COCOA100%', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'00668', name:'SERENDIB CHOCOLATE 100G COCOA 70%', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'4796019050025', name:'SOBAKO KARULUTHUDA RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'00689', name:'SOBAKO MADATHAWALU RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'00699', name:'SOBANIL SMOOTH PEANUT BUTTER 500G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'00700', name:'SOURSAP LEAVES POWDER 1KG', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'00708', name:'SUNARA OSU EIGHT SEED', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'00716', name:'THINNAI BREAST 1KG', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00719', name:'THINNAI WHOLE LEG 1KG', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'00737', name:'WOOD PLATES A1001', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00738', name:'WOOD PLATES A1004', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00739', name:'WOOD PLATES A1005', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00740', name:'WOOD PLATES A1006', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00741', name:'WOOD PLATES A1007', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00742', name:'WOOD PLATES A1009', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00743', name:'WOOD PLATES A1011', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00744', name:'WOOD PLATES A1012', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00745', name:'WOOD PLATES A1017', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'00748', name:'YOGHURT LOW SUGAR 300ML', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'00749', name:'YOGHURT NO SUGAR 300ML', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'4793001319599', name:'KENKO1ST AMLA POWDER 50G PACK', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'010', name:'Sulthana', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'011', name:'Sulthana 500g', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'014', name:'Pecan Nuts 500g', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'015', name:'Pecan Nuts 50g', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'040', name:'KENKO1ST SESAME BALL', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'123456789012', name:'Devilled Cashew with Karapincha 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'00050', name:'CEYLON COFFEE BEANS MEDIUM ROAST200G', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'20231102', name:'Coffee Sachet', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'202406081', name:'Bee honey 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'202406082', name:'105ML EMPTY GLASS BOTTLE AND LID', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'202406083', name:'Sticker Label Bee Honey', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'202406273', name:'String Hopper Butterfly Pea - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'2354687', name:'KENKO1ST ROASTED CASHEW NUT 50G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'250727', name:'MANNANKULAM VCO 250 ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'300ML SQUAT JAR', name:'300ML SQUAT JAR', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4571143321018', name:'Japan Henna Natural 100g', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'4571143321216', name:'Japan Henna Bronze Gray 100g', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'4571143321223', name:'Japan Henna Latte Brown 100g', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'4571143325252', name:'Japan Henna Coffee Brown 100g', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'Cucumber Facial Wash 100ml', name:'Cucumber Facial Wash 100ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'4791054007911', name:'MAS PORK SATAY', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012410', name:'MAS MEAT GOLDEN CHICKEN SAUSAGE 300G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012427', name:'MAS MEAT PORK SAUSAGE 300G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012434', name:'MAS SPICY CHICKEN SAUSAGE 300G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012489', name:'MAS MEAT LINGUS 320G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012496', name:'MAS CHILLI CRUSTED HAM 150G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012502', name:'MAS SMOKED CHICKEN SAUSAGE 300G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012519', name:'MAS MEAT BACON 150G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012564', name:'MAS MEAT PEPPER CRUST HAM 150G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4791054012588', name:'MAS MEAT CHICKEN SLICES 200G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4793000224038', name:'CEYLON COFFEE POWER DARK 100G', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793000224120', name:'CEYLON COFFEE BEANS DARK ROAST 200G', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793000224151', name:'CEYLON COFFEE ESPRESSO 100G GIFT', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793000224168', name:'CEYLON COFFEE TRADITIONAL 100G GIFT', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793000224175', name:'CEYLON COFFEE FILTER 100G GIFT', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793000239537', name:'Best Kimia Dates 500g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000460009', name:'SUNARA OSU KESHARAKSHA HAIR OIL 100ML', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793000460016', name:'SUNARA OSU DANTHA RAKSHA POWDER 35G', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793000460030', name:'SUNARA OSU PEENAS OIL 100ML', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793000460054', name:'SUNARA OSU ASAMODAGAM 385ML', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793000460061', name:'SUNARA OSU DANTHA RAKSHA TOOTH PASTE', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793000460092', name:'SUNARA HEADACHE OIL 10ML', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'4793000609002', name:'Divine eucalyptus honey  432g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609019', name:'Divine Raw Bee Honey 62g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609026', name:'Divine Raw Bee Honey 216g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609033', name:'Divine Wild Bee Honey 432g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609040', name:'Divine Forest Garden Honey 432g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609057', name:'Divine java plum honey 432g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609088', name:'DIVINE TURMERIC BEE HONEY 284G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793000609118', name:'Divine Kithul Treacle 532g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609125', name:'Divine Kithul Treacle 288g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609248', name:'Divine Kithul Jaggery 500g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000609255', name:'Divine black forest honey 432g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793000739006', name:'THINNAI WHOLE CHICKEN 1KG', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4793000739013', name:'THINNAI COUNTRY CHICKEN EGG10 BOX', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4793000739105', name:'THINNI COUNTRY CHICKEN PRE CUT 1KG', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4793000739136', name:'THINNI BONELESS MUTTON 500G', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4793001055051', name:'SERENDIB COCOA NIBS 100G', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'4793001055075', name:'Serendib Cacao Tea 100g', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001166009', name:'Himalayan Rock Salt (Crystal)', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319016', name:'JAYADI KURAKKAN FLOOR 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319023', name:'Kurakkan Flour 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319030', name:'JAYADI MENERI RICE 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319047', name:'JAYADI MENERI RICE LARGE 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319054', name:'JAYADI KITHUL FLOUR 100G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319061', name:'JAYADI  KITHUL FLOUR 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319078', name:'JAYADI GRAINS WHITE GINGELLY 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319092', name:'JAYADI  KOLLU 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319139', name:'JAYADI HABALAPETHI 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'00116', name:'JAYADI GRAINS OLU RICE 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319184', name:'JAYADI BLACK GINGELLY 100G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319276', name:'JAYADI PORRIDGE SMALL 75G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319320', name:'Jayadi Thanahal 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319504', name:'JAYADI GRAINS WHITE RICE FLOUR 500G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319510', name:'KENKO1ST ASHWAGANDA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319511', name:'JAYADI RED RICE FLOUR 500G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319513', name:'KENKO1ST BLACK SESAME SEED 100G PACK', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319515', name:'KENKO1ST BURNT CASHEW NUTS 100G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319517', name:'KENKO1ST CASHEW NUTS CHILLI GARLIC 100G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319520', name:'KENKO1ST DEVILLED CASHEW NUT 50G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319521', name:'KENKO1ST CASHEW NUTS GARLIC 100G PACK', icon:'🥜', unit:'kg', category:'Nuts' },
+  { barcode:'4793001319523', name:'KENKO1ST ROASTED CASHEW NUT 100G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319525', name:'KENKO1ST CASHEW NUT SALT AND PAPPER 100G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319527', name:'KENKO1ST CASHEWNUT SALT 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319529', name:'KENKO1ST CASHEW NUTS SUGAR COATED 100G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319536', name:'KENKO1ST CORIANDER POWDER 50G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319539', name:'KENKO1ST FOREST BEE HONEY 305G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793001319541', name:'KENKO1ST HATHAWARIYA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319542', name:'KENKO1ST HEENBOVITIYA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319545', name:'KENKO1ST KATUPILA 50G POWDER', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319546', name:'LITTLE TS KITHUL PEANUTS 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319549', name:'KENKO1ST LUNUWILA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319563', name:'KENKO1ST RICE LANKA BASMATHI 1KG', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319567', name:'KENKO1ST PACHCHAPERUMAL 1KG', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319570', name:'KENKO1ST OVEN PEANUT 100G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319571', name:'KENKO1ST PORICH PACK 150G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319573', name:'KENKO1ST RED RICE FLOUR 200G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319574', name:'KENKO1ST WHITE RICE FLOUR 200G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319588', name:'KENKO1ST MENERI RICE 200G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319589', name:'KENKO1ST SPRAT 50G PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319590', name:'KENKO1ST SPRAT POWDER 25G PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319591', name:'LITTLE TS DEVILED PEANUTS 125G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319592', name:'KENKO1ST DRIED GOOSEBERIES 100G PACK', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001319598', name:'KENKO1ST BELI POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319599', name:'KENKO1ST NELLI POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319600', name:'KENKO1ST THULSI POWDER 50G PACK', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319601', name:'KENKO1ST YAKINARAN POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319609', name:'KENKO1ST SUWADAL RICE 450G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319610', name:'JAYADI STRING HOPPERS FLOUR 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319614', name:'KENKO1ST KOTHALAHIBUTU POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319615', name:'KENKO1ST NEERAMULLIYA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319616', name:'KENKO1ST KITHUL JAGGERY 200G VACCUM PACK', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793001319617', name:'KENKO1ST PAPAYA LEAVES POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319618', name:'KENKO1ST PITAWAKKA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319619', name:'KENKO1ST RANAWARA MAL POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319620', name:'KENKO1ST RASAKINDA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319621', name:'KENKO1ST RAW PEANUT 200G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319623', name:'KENKO1ST SOURSAP POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319624', name:'KENKO1ST THEBU LEAVES POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319626', name:'KENKO1ST VENIVAL GATA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319629', name:'KENKO1ST POLPALA POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319630', name:'KENKO1ST OLU RICE 200G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319632', name:'GOOSBERRY 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319633', name:'ALMONDS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319634', name:'APRICOT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319635', name:'BANANA CHIPS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319636', name:'BASIL SEED 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319637', name:'BLACK RAISINS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319638', name:'BLUEBERRY 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319639', name:'BROWN SUGER 1 KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319641', name:'CHERRY 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319642', name:'CHIA SEEDS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319643', name:'CRANBERRY 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319645', name:'DRY MANGO 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4793001319646', name:'DRY PINEAPPLE 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4793001319647', name:'FLAX SEED 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319650', name:'HAZELNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319653', name:'KENKO1ST CINNAMON POWDER 50G PACK', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319654', name:'Pistachio Clean 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319657', name:'KENKO1ST COCONUT SUGAR 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319658', name:'KENKO1ST CORIANDER 100G PACK', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319659', name:'KENKO1ST CUMIN 100G', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319661', name:'KENKO1ST DICKWEE  RICE 1KG', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319662', name:'KENKO1ST IRAMUSU 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319663', name:'WALNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319664', name:'KENKO1ST WELPENELA POWDER 50G PACK', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319668', name:'Dried starwberry 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319669', name:'VANILA STICK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319670', name:'KENKO1ST BLACK TEA 100G PACK', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001319671', name:'OVEN CASHEW PCS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319672', name:'OVEN FULL CASHEW 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319673', name:'PSYLLIUM HUSK 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319674', name:'PINK SALT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319675', name:'PUMPKIN SEED 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319676', name:'QUINOA 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4793001319678', name:'KENKO1ST ORGANIC VERGIN COCONUT OIL 200ML', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319681', name:'KENKO1ST COCOA POWDER 100G', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'4793001319682', name:'KENKO1ST CURRY LEAVES POWDER 100G PACK', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001319683', name:'MOMIJI NATURAL LARGE - 01 PAD PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319684', name:'MOMIJI NATURAL LARGE 02 PADS PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319685', name:'MOMIJI NATURAL MEDIUM 01 PAD PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319686', name:'MOMIJI NATURAL MEDIUM 02 PADS PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319687', name:'MOMIJI NATURAL NIGHT 01 PAD PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319688', name:'MOMIJI NATURAL SMALL 02 PADS PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319689', name:'MOMIJI NATURAL SMALL-01 PAD PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001319692', name:'KENKO1ST CLOVE WHOLE 35G PACK', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319694', name:'KENKO1ST BLACK PAPPER WHOLE 100G', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319695', name:'Garcinia 100G', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001319696', name:'KENKO1ST BLACK TEA 50G PACK', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001319697', name:'KENKO1ST DEVILLED CASHEW NUT 100G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001319702', name:'JAYADI_SAGO SEEDS 100G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001319726', name:'Jayadi_Peanut Butter 200g', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319764', name:'JAYADI KURAKKAN FLOUR 200G', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001555001', name:'KENKO1ST GOATS MILK 190ML', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'4793001555018', name:'KENKO1ST KITHUL TREACLE 500ML', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793001555025', name:'KENKO1ST HAZAL NUT 85G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555032', name:'KENKO1ST BASIL SEED 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555049', name:'KENKO1ST CHIA SEEDS PACK 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555056', name:'KENKO1ST SUNFLOWER SEED PACK 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555063', name:'KENKO1ST BLACK RAISINS 100G PACK', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555070', name:'KENKO1ST KITHUL JAGGERY PEANUT 100G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555087', name:'KENKO1ST DEVILLED PEANUT 100G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555100', name:'KENKO1ST APRICOT 85G PACK', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555117', name:'KENKO1ST WHITE SESAMI 200G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555124', name:'KENKO1ST GINGER POWDER 100G PACK', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555131', name:'KENKO1ST BROWN SUGAR 500G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793001555193', name:'KENKO1ST BLACK PAPPER POWDER 100G', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555209', name:'KENKO1ST BLACK PAPPER POWDER 50G PACK', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555223', name:'Ayurvedic Herbal Tea - Pitta 15 bags', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001555230', name:'KENKO1ST CINNAMON POWDER 100G PACK', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555247', name:'KENKO1ST CRANBERRIES 45G', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555254', name:'KENKO1ST ALMOND 45G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555261', name:'KENKO1ST CINNAMON STICK 80G', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555292', name:'KENKO1ST VIRGIN COCONUT OIL 750ML', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555308', name:'KENKO1ST VIRGIN COCONUT OIL 500ML', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555315', name:'KENKO1ST KITHUL TREACLE 250ML', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793001555322', name:'Ayurvedic Herbal Tea - Kapha 15bags', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001555353', name:'KENKO1ST PISTACHIO 85G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555360', name:'KENKO1ST ALMOND PACK 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555377', name:'KENKO1ST FLAX SEED PACK 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555384', name:'KENKO1ST PUMPKIN SEEDS PACK 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555391', name:'KENKO1ST ORGANIC ROASTED PEANUTS 200G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555407', name:'KENKO1ST QUINOA SEED PACK 200G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555414', name:'KENKO1ST WALNUT 85G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555438', name:'KENKO1ST HIMALYAN PINK SALT 250G PACK', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4793001555445', name:'KENKO1ST CRANBERRIES 100G PACK', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555452', name:'KENKO1ST UNROASTED CACAO POWDER 100G', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'4793001555483', name:'KENKO1ST BLUEBERRY 85G', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555490', name:'KENKO1ST PLUMS 100G PACK', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555506', name:'KENKO1ST RICE FLAKES 150G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001555520', name:'Ayurvedic Herbal Tea - Tri Dosha 15bags', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001555544', name:'KENKO1ST RICE KURULUTHUDA 1KG', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555568', name:'Ayurvedic Herbal Tea - 7mixed 15bags', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001555575', name:'KENKO1ST CEYLON CASHEW DEVILLED 75G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555582', name:'KENKO1ST CEYLON CASHEW BURNT 75G PACK', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4793001555599', name:'KENKO1ST KALUHEENATI RICE 1KG', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555629', name:'KENKO1ST KITHUL FLOUR 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001555674', name:'KENKO1ST COCONUT SUGAR 200G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555681', name:'Ayurvedic Herbal Tea - Vata 15bags', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793001555698', name:'KENKO1ST MORINGA POWDER 100G PACK', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793001555704', name:'KENKO1ST NUTS AND FRUITS 50G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555711', name:'KENKO1ST GOTUKOLA POWDER 100G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555742', name:'KENKO1ST DRY MANGO 100G PACK', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'DRY BANANA', name:'DRY BANANA 100G', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555766', name:'KENKO1ST PREMIUM NUT MIX 75G', icon:'💪', unit:'pcs', category:'Superfood Snacks' },
+  { barcode:'4793001555773', name:'KENKO1ST DRY WATERMELON 100G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555797', name:'KENKO1ST RED COWPEA PACK 250G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001555803', name:'KENKO1ST WHITE COWPEA PACK 250G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001555810', name:'KENKO1ST GREEN GRAM PACK 250G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001555834', name:'KENKO1ST FOREST BEE HONEY 140G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793001555858', name:'KENKO1ST BRAIN BOOSTER 100G PACK', icon:'💪', unit:'pcs', category:'Superfood Snacks' },
+  { barcode:'4793001555872', name:'KENKO1ST PSYLLIUM HUSK 100G PACK', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555889', name:'KENKO1ST CHOCOLATE WITH THREE NUTS 100G', icon:'💪', unit:'pcs', category:'Superfood Snacks' },
+  { barcode:'4793001555896', name:'KENKO1ST ROASTED SEED AND NUTS SNACK 100G', icon:'💪', unit:'pcs', category:'Superfood Snacks' },
+  { barcode:'4793001555902', name:'KENKO1ST NATUREL HIGH PROTEIN MIX 100G PACK', icon:'💪', unit:'pcs', category:'Superfood Snacks' },
+  { barcode:'4793001555926', name:'KENKO1ST NUTS AND FRUITS 100G PACK', icon:'💪', unit:'pcs', category:'Superfood Snacks' },
+  { barcode:'4793001555933', name:'KENKO1ST Suwandel Rice 1KG', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001555957', name:'KENKO1ST ROSA BASMATHI 1KG', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001555964', name:'KENKO1ST TURMERIC POWDER 100G', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793001555971', name:'KENKO1ST KHALAS DATES 200G', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4793001555988', name:'KENKO1ST CHICKPEA 400G PACK', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793001633006', name:'SOBANIL SMOOTH PEANUT BUTTER 300G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793001633020', name:'SOBANIL CRUNCHY PEANUT BUTTER 300G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793002034062', name:'Tamarind with kochchi sauce 250ml', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002034307', name:'Sweet Tamarind 300g', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'00654', name:'RISING SUN FRESH NOODLES PACK', icon:'❄️', unit:'pcs', category:'Frozen Food' },
+  { barcode:'4793002183012', name:'RISING SUN UDON NOODLES PACK', icon:'❄️', unit:'pcs', category:'Frozen Food' },
+  { barcode:'4793002183029', name:'RISING SUN_GYOZA SHEET 200G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002183036', name:'RISING SUN_WONTON SHEET 200G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002183043', name:'RISING SUN GYOZA CHICKEN DUMPLING 250G', icon:'❄️', unit:'pcs', category:'Frozen Food' },
+  { barcode:'4793002183050', name:'RISING SUN_DRY NOODLES DISK 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002183067', name:'RISING SUN_MISO 600G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002183074', name:'RISING SUN_DRY NOODLES STRAIGHT 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002183081', name:'RISING SUN_DRY NOODLES EXTRA THICK 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002183104', name:'RISING SUN_YAKISOBA SAUCE 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002183111', name:'RISING SUN_TERIYAKI SAUCE 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002183128', name:'RISING SUN_UMAMI SAUCE 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002183135', name:'RISING SUN_CHOW MEIN SAUCE 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002183142', name:'RISING SUN_SZECHUAN SAUCE 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002491063', name:'dandila 50g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793002491131', name:'ORI_SAVARY BANANA', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793002491155', name:'Ori Dehydrated Jackfruit 100g', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'0055', name:'ORI JACKFRUIT KOTHTHU', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002491186', name:'ORI_JACKFRUIT CURRY', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'4793002491216', name:'ORIFOOD_KITHUL POWDER 150G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002491230', name:'ORI_YAKINARAN POWDER 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793002491315', name:'ORI_YAKI NARAN PANAYA 25G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793002491360', name:'ORI_MANGO POWDER 50G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793002491377', name:'ORI_WOOD APPLE POWDER', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4793002491414', name:'ORI_JACK SEED MURUKKU', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793002491421', name:'ORIFOOD_WADAMAL PANAYA', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4793002491957', name:'ORI_WERALU POWDER 50G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'8908013252417', name:'Ori Curry Leavs Powder 50g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4793002491988', name:'ORIFOOD_WELPENELA POWDER 100G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793002491995', name:'ORI heen bovitiya powder 50g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4793002741007', name:'MISA PROTEIN NOODLES 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002741014', name:'MISA PROTEIN CHOCOLATE CHIPS COOKIES', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793002741021', name:'MISA PROTEIN DATE COOKIES', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793002741038', name:'Misa Banana Oatmeal Cookies 130g', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793002741045', name:'Misa Cashew and Peanut Cookies', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793002741052', name:'Misa Multi Grain Pappadam 70g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002741113', name:'Misa Multi Grain Pasta 300g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4793002780006', name:'Folkland Garlic Thiyal 340g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'4793002780037', name:'FOLKLAND TAMARIND SAUCE 325G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'479300278021', name:'Folkland Garlic Thiyal 150g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'4793002780228', name:'Folkland Date and Cashew Chutney 150g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'4793002780266', name:'Folkland Nelli Preserve 150g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'4793002780310', name:'FOLKLAND SINHALA ACHCHARU 320G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4793002780402', name:'FOLKLAND MANGO JAM 160G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4793003165031', name:'Suchi Wood Apple Drink', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'4794444012434', name:'Himalayan Rock Salt', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4794444018344', name:'KENKO1ST BANANA CHIPS 200G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4793001319690', name:'MOMIJI NATURAL ZIPPER PURSE', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'Dharani Memory Booster', name:'Dharani Memory Booster', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Madhuka Herball Syrup 100ml', name:'Madhuka Herball Syrup 100ml', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Nilma Herbal Hair Oil 90ml', name:'Nilma Herbal Hair Oil 90ml', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Gajabala', name:'Gajabala', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Snaatha Peyawa', name:'Snaatha Peyawa', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Sanstha Rasam', name:'Sanstha Rasam', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Thripala Tablets', name:'Thripala Tablets', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Jeewalepa Herbal Balm', name:'Jeewalepa Herbal Balm', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Iramusu Tea Box 25', name:'Iramusu Tea Box 25', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Nelli Rasakinda Tea 50g', name:'Nelli Rasakinda Tea 50g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Cinnamon Tea Box 50g', name:'Cinnamon Tea Box 50g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Sandalwood Facial Wash 100ml', name:'Sandalwood Facial Wash 100ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'Venivel Body Wash 200ml', name:'Venivel Body Wash 200ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'Venivel Body Wash 100ml', name:'Venivel Body Wash 100ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'Papaya Facial Wash 100ml', name:'Papaya Facial Wash 100ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'Diabetic Tea 50g', name:'Diabetic Tea 50g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Perfect Glow Body Wash 200ml', name:'Perfect Glow Body Wash 200ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'Perfect Glow Body Wash 100ml', name:'Perfect Glow Body Wash 100ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'Dhathree Capsules Laxa', name:'Dhathree Capsules Laxa', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796003268245', name:'Rathhadun Body Wash 200ml', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796003268252', name:'Panchawalkala  Shampoo 95ml', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796005162510', name:'String Hopper White - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162527', name:'String Hopper Red - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162541', name:'String Hopper Hibiscus - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162558', name:'String Hopper Pumpkin - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162565', name:'String Hopper Suwadel - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162572', name:'String Hopper Kithul - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162589', name:'String Hopper Masbedda - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162602', name:'String Hopper Welpenela - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162633', name:'String Hopper Moringa - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796005162640', name:'String Hopper Curry Leaves - Don Daddy', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796006110015', name:'NATURELLE  KARAWILA', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110022', name:'NATURELLE  GOTUKOLA', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110039', name:'NATURELLE  KARAPINCHA & GARLIC', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110046', name:'NATURELLE  WELPENELA', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110053', name:'NATURELLE  PITAWAKKA', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110077', name:'NATURELLE CINNAMON CAPSUALS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110084', name:'NATURELLE TURMERIC', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110091', name:'NATURELLE MORINGA CAPSUAL', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110671', name:'NATURELLE  ASHWAGANDA', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110886', name:'NATURELLE CAPSULES THEBU', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796006110893', name:'NATURELLE HEENBOWITIYA CAPSULES', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796015380027', name:'AMIRON WHOLE CHICKEN', icon:'🥩', unit:'pcs', category:'Meat & Eggs' },
+  { barcode:'4796015380034', name:'AMIRON BREAST SKINLESS', icon:'🥩', unit:'kg', category:'Meat & Eggs' },
+  { barcode:'4796015380041', name:'AMIRON CHICKEN LEG SKINLESS', icon:'🥩', unit:'kg', category:'Meat & Eggs' },
+  { barcode:'4796016390360', name:'GREEK YOGHURT 300ML', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'4796018132487', name:'OATEO_BABY OATS 500G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796018132746', name:'ONYX_BLISS BALLS TUTTI FRUTTI 40G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4796018132753', name:'ONYX_BLISS BALLS SALTED CARAMEL 40G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4796018132760', name:'ONYX_BLISS BALLS CHOCO BLAST 40G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4796018132777', name:'ONYX_PROTEIN BALLS CHOCOLATE 50G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4796018132784', name:'ONYX_PROTEIN BALLS COFFEE 50G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'4796018132920', name:'OATEO_BABY OATS 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796018132951', name:'ONYX_HIGH PROTEIN OATS BELGIAN CHOCOLATE 350G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050001', name:'SOBAKO SUWADAL RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050018', name:'SOBAKO KALUHEENATI RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050023', name:'SOBAKO KAHAMALA RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050029', name:'SOBAKO PACHCHAPERUMAL RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050032', name:'SOBAKO MA VEE 800G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050049', name:'SOBAKO BATAPOLA RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050056', name:'SOBAKO LANKA BASMATHI RICE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050070', name:'SOBAKO RICE KADA', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050087', name:'SOBAKO SUWADAL SAHAL PORRIDHE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050094', name:'SOBAKO HEENATI SAHAL PORRIDGE', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050100', name:'SOBAKO BADAIRIGU SAHAL PORRIDGE 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050155', name:'SOBAKO SUWADAL PASTA 350G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050162', name:'SOBAKO CORN PASTA 350G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050179', name:'SOBAKO MORINGA PASTA 350G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050186', name:'SOBAKO KURAKKAN PASTA 350G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050254', name:'SOBAKO_Blue Butterfly pea Pasta 250g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019050940', name:'SOBAKO HAMPER BOX', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019053712', name:'Sobako Horse Gram', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019053729', name:'SOBAKO_Suwandel String Hopper Flour 400g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796019053736', name:'SOBAKO_Corn Pittu Flour 400g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796021220089', name:'Foxtail Millet 500 g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796021220102', name:'Kodo Millet 500g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796021220669', name:'Komas Arabian Dates 250g', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4796021220676', name:'Medjool Dates 500g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'4796021220713', name:'Wheat Flour 1kg', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796021220751', name:'Komas Arabian Dates 500g', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4796021430020', name:'GRAVITY VCO WHOLE KERNEL OIL 775ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796021430303', name:'Leura Hair Oil With Sevendara 100ml', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'4796021430310', name:'GRAVITY EVCO 100ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796021430327', name:'GRAVITY EVCO 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796021430358', name:'GRAVITY EVCO 775ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796021430433', name:'Organic Extra Virgin Coconut Oil 775ml', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4796021430464', name:'GRAVITY VCO WHOLE KERNEL OIL 375ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796021430549', name:'Coconut Oil 750ml Gravity', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796021430624', name:'LAURA HAIR SPRAY 100ML', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'4796021430808', name:'Gravity Coconut Sugar 250g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'00093', name:'GRAVITY COCONUT FLOUR 500G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796022480031', name:'Aloe Vera Original 200ml', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'6103738486320', name:'Mango Cubes', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'4796029150111', name:'Helarasa Mixture Bite 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'4796029150180', name:'Helarasa Chicken Noodles', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'6103738486304', name:'KENKO1ST SAGO 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'6103738486311', name:'KENKO1ST GOLDEN RAISINS PACK 100G', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'6103738486305', name:'KENKO1ST BARLEY 200G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796033640042', name:'KENKO1ST COOKING CASHEWNUT 200G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'4796033640103', name:'KENKO1ST DRIED PITTED PRUNES 75G', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4796033640110', name:'Bay Leaves 10g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640127', name:'Kenko1st Ceylon Green Tea 70g', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4796033640134', name:'Green Sweet Stevia Powder 100g', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'4796033640141', name:'KENKO1ST SEMOLINA 500G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796033640158', name:'Kenko1st Moringa Tea - 12 Bags', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796033640165', name:'Kenko1st Heenbovitiya Tea - 12 Bags', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796033640172', name:'Cardamom 10g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640189', name:'KENKO1ST Sudu Aruna White Rice 1KG', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796033640196', name:'KENKO1ST_Ceylon Coffee Bean Medium Roast 100g', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4796033640202', name:'KENKO1ST_Ceylon Coffee Bean Dark Roast 100g', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4796033640219', name:'KENKO1ST Cold Pressed Sesame Oil 250ml', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796033640226', name:'KENKO1ST ORGANIC MORINGA 60 TABLETS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796033640233', name:'KENKO1ST MORINGA 60 CAPSULES', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796033640240', name:'HIBISCUS FLOWER TEA - 12 TEA BAGS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796033640257', name:'BLUEBUTTERFLY TEA - 12 TEA BAGS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796033640271', name:'KENKO1ST Ceylon Coffee Powder – Medium Roast – 100g', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4796033640288', name:'Dry Pineapple 100g', icon:'🍇', unit:'pcs', category:'Dry Fruits' },
+  { barcode:'4796033640295', name:'KENKO1ST_Ceylon Coffee Powder Dark Roast 100g', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4796033640318', name:'Kothala Himbutu Tea Box 12 Tea Bag', icon:'☕', unit:'pcs', category:'Coffee & Tea' },
+  { barcode:'4796033640370', name:'RANAWARA TEA - 12 TEA BAGS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796033640394', name:'KENKO1ST ROASTED SESAME OIL 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4796033640400', name:'Kenko1st Chilli Powder 100g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640417', name:'Kenko1st Chilli Pieces 100g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640424', name:'Kenko1st Roasted Curry Powder 100g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640431', name:'Kenko1st Garlic Powder 50g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640448', name:'Kenko1st Onion Powder 50g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640455', name:'Kenko1st Goraka Powder 100g', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'4796033640479', name:'IRAMUSU TEA - 12 TEA BAGS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'4796918130170', name:'OATEO_ OTAS FLOUR 500G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796918130439', name:'OATEO_MUESLI MAD MIX 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796918130620', name:'OATEO_MUESLI TROPICAL MIX 400G', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4796918130644', name:'OATEO_JUMBO ROLLED OATS 1KG', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'4797001054304', name:'KING COCONUT WATER 300ML', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'Honey Bird Hot Sauce BBQ 250ml', name:'Honey Bird Hot Sauces BBQ 250ml', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'Honey Bird Hot Sauce with Pineapple', name:'Honey Bird Hot Sauce with Pineapple', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'4797001117276', name:'Chesta_Kurakkan Pasta 160g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'MAA  GORAC COLA', name:'MAA  GORAC COLA', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'5060366630216', name:'MIRACLE COCONUT BUTTER 300G', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'5072776', name:'MANNANKULAM  VCO 750ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'57000003', name:'Plastic Bottle Pet 400ml', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'57000004', name:'Plastic Bottle Pet 325ml', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'57000014', name:'Plastic Bottle Pet Round 585ml', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'57000042', name:'Plastic Bottle Pet Round 700ml', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'57000043', name:'Plastic Bottle Pet Round 900ml', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'603803995810', name:'MIRACLE COCONUT MILK CAN 400ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'610373848620', name:'MIRACLE SESAMI OIL 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'6103738486208', name:'MIRACLE EVCO 750ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'CEYLON CASHEW ROASTED 75G', name:'KENKO1ST CEYLON CASHEW ROASTED 75G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'KENKO 1ST BANANA CHIPS 100G', name:'KENKO 1ST BANANA CHIPS 100G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'6103738486224', name:'Dried Gooseberry 1Kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Desadun Kalkaya', name:'Desadun Kalkaya', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Madana Modakaya', name:'Madana Modakaya', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Manjane Surkh Toothpaste', name:'Manjane Surkh Toothpaste', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Raktha Chandan Facial Wash 100ml', name:'Raktha Chandan Facial Wash 100ml', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Thawili Pinda', name:'Thawili Pinda', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'Thawili Niragundi', name:'Thawili Niragundi', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'6103738486241', name:'Cardamom 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Asamodagam TBC 1kg', name:'Asamodagam TBC 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Black pepper TBC 1kg', name:'Black pepper TBC 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Cinnoman TBC 1kg', name:'Cinnoman TBC 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'Koththamalli TBC 1kg', name:'Koththamalli TBC 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'Neeramulliya TBC 1kg', name:'Neeramulliya TBC1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Ranawara TBC 1kg', name:'Ranawara TBC 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Honey Bird Hot Sauce Extra Hot 250ml', name:'Honey Bird Hot Sauce Extra Hot 250ml', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'6103738486255', name:'OVEN CASHEWNUT HALF 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Isabgul 1kg', name:'Isabgul 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Coconut Sugar 1kg', name:'cocounut suger 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'White cowpe 1kg', name:'White Cowpe 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'KENKO1ST NATUREL HIGH PROTEIN MIX 250G PACK', name:'KENKO1ST NATUREL HIGH PROTEIN MIX 250G PACK', icon:'💪', unit:'pcs', category:'Superfood Snacks' },
+  { barcode:'6103738486273', name:'Rice Flakes 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'Red Cowpee 1kg', name:'Red Cowpee 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'cashew nut salt 1kg', name:'SALT CASHEWNUT 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'6103738486277', name:'KENKO1ST AMLA POWDER 100G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'6103738486295', name:'KENKO1ST FOREST BEE HONEY 400G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'6103738486296', name:'KENKO1ST FOREST BEE HONEY 460G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'6103738486302', name:'Helayo Sweet Tamarind', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'6103738486312', name:'KENKO1ST CLOVE POWDER 100G PACK', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'6103738486314', name:'KENKO1ST NUTS AND FRUITS 1KG PACK', icon:'📦', unit:'kg', category:'Wholesale' },
+  { barcode:'6103738486318', name:'CHOCOLATE PACK 100G', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'6103738486340', name:'Dried Kiwi 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'6103738486341', name:'Dried Cherry 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'6103738486342', name:'Dried Peach', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'614409721758', name:'MIRACLE EVCO GLASS 1L', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'614409721802', name:'MIRACLE COCONUT VINEGAR 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'680666483654', name:'MIRACLE ORGANIC COCONUT MILK POWDER 300G', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'680666483661', name:'MIRACLE MCT OIL 250ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'8420701103008', name:'Olive Oil', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'8901689703669', name:'Malas Grenadine Mocktail Syrup 750ml', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'8901689705793', name:'Malas Peach Mocktail Syrup 750ml', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'8901689705809', name:'Malas Grape Mocktail Syrup 750ml', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'8904395006116', name:'Gourmia Almond Honey Roasted 200g', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'8906016013428', name:'Gourmia Energy Mix 200G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'8906016013435', name:'Gourmia Exotic Mix 200G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'8906016013442', name:'Gourmia Fruits Berries Mix 200G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'8906016014722', name:'Gourmia Roasted Almonds 200G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'8906024651254', name:'Bezzies Corn Flakes 375 g', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'8906115380155', name:'Dried Pruns 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8906115380156', name:'Golden Raisins 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8906115380157', name:'Helarasa Garlic Bite 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'8906115380158', name:'Cley Products', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'8906115380159', name:'Janolan Alo Vera Drink 335g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'8906115380160', name:'Janolan Healthy Flour 500g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'8906115380161', name:'KENKO1ST OVEN CASHEWNUT 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'8906115380167', name:'Bayleaves 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'8908013252183', name:'Muesli Fruits & Nuts 450g', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'8908013252213', name:'Muesli Nuts & Raisins 450g', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'8908013252237', name:'Muesli Nuts & Cookies 450g', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'8908013252404', name:'Tropical Granola 500g', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'8908013252411', name:'Raisin& Almond Granola 500g', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'8908013252412', name:'Sinhala Achcharu 350g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'8908013252413', name:'Salmon Sambal 350g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'8908013252414', name:'Ambarella Chutney 350g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'8908013252415', name:'Tamarind Chutney 350g', icon:'🥘', unit:'pcs', category:'Pickles & Ready Meals' },
+  { barcode:'8908013252418', name:'Mixture Bite 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'8908013252419', name:'Devilled Peanut 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8908013252420', name:'Stevia Power 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8908013252421', name:'Garlic Murukku 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'8908013252424', name:'Semolina 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'8908013252426', name:'CoCo Syrup 300ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'8908013252428', name:'Gram Dhall 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'8908013252589', name:'High Protein Power Oats 400g', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'94773596505', name:'Honey Bird 85% Dark Chocolate 50g', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'9477359650568', name:'Reap Lanka Curry Leaves Tea 50 g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'9477359650569', name:'Reap Moringa Tea 50g', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'9477359650571', name:'WOOD PLATE A1003', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'9477359650572', name:'WOOD PLATE A1008', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'9477359650573', name:'WOOD PLATE A1010', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'9477359650574', name:'WOOD PLATE A1013', icon:'🛒', unit:'pcs', category:'Grocery' },
+  { barcode:'9477359650575', name:'REAPLANKA HEENBOVITIYA TEA 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'9477359650576', name:'CoCo Syrup 125ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'9477359650586', name:'Basmathi 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650587', name:'MEE OIL - 85ml', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'9477359650588', name:'Coffee Beans Dark Roast 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650589', name:'Coffee Beans Medium Roast 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650591', name:'Organic Ginger 1kg', icon:'🫙', unit:'pcs', category:'Spices' },
+  { barcode:'9477359650593', name:'CoCo Syrup 500ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'9477359650594', name:'CoCo Treacle 350ml', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'9477359650595', name:'KENKO1ST_BEE HONEY 200G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'9477359650596', name:'Handle Bag Small', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650597', name:'Handle Bag Medium', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650598', name:'Handle Bag E-Large', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650599', name:'Kenko_ ECO Bag', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650600', name:'KENKO1ST COFFEE POWDER - MEDIUM ROAST', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650601', name:'Cheese with Cashew Nut 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650603', name:'KENKO1ST KOTTAMBA SEEDS 50G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'9477359650604', name:'Nai Chilli With Cashew Nut 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650605', name:'Kithul Coated Cashew Nut 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650606', name:'Kottamba Seeds 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650607', name:'Thanahal 1Kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4796003268122', name:'SANSTHA  ARALU 2TABLETS', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'9477359650609', name:'Ashwaganda Powder 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'5072777', name:'MANNANKULAM COLD PRESSED VCO 750ML', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'9477359650611', name:'Premium Mix 1kg', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650612', name:'Sobanil Peanut Butter Crunchy 500g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'9477359650613', name:'Chilli Powder 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650614', name:'Roasted Curry Powder 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650615', name:'Chilli Flakes 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650625', name:'Kenko1st Dried Fruits Mix 100g', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'9477359650639', name:'Glass Jar 450g', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650640', name:'Garlic Powder 1kg', icon:'📦', unit:'kg', category:'Wholesale' },
+  { barcode:'9477359650641', name:'Big Onion Powder 1kg', icon:'📦', unit:'kg', category:'Wholesale' },
+  { barcode:'9477359650642', name:'Garcinia Powder 1kg', icon:'📦', unit:'kg', category:'Wholesale' },
+  { barcode:'9477359650646', name:'Moringa Powder Tbc 1kg', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650647', name:'Glass Jar  With Lids and Shrink 200g', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650648', name:'Package charge (boxes)', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4796029980275', name:'NIMK OATS COOKIES 135G', icon:'🍿', unit:'pcs', category:'Snacks & Spreads' },
+  { barcode:'9477359650650', name:'NIMK DARK CHOCOLATE 80G', icon:'🍫', unit:'pcs', category:'Chocolates' },
+  { barcode:'9477359650655', name:'Shrink', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650656', name:'Glass Jar 150ml', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'4793000609743', name:'Divine kithul jaggery 300g', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'9477359650658', name:'REAPLANKA THEBU TEA 50G', icon:'🌿', unit:'pcs', category:'Ayurvedic Products' },
+  { barcode:'9477359650659', name:'19/13/11 5 Ply Ctns', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650660', name:'COCOA NIBS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'9477359650661', name:'Dry Lime Slices', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650663', name:'AYURLABS HAIR GROWTH OIL 100ML', icon:'📦', unit:'pcs', category:'Health & Beauty' },
+  { barcode:'9477359650669', name:'PISTACHIO CHILLI 1kg', icon:'🥜', unit:'kg', category:'Nuts' },
+  { barcode:'9477359650670', name:'PISTACHIO CHEESE 1kg', icon:'🥜', unit:'kg', category:'Nuts' },
+  { barcode:'9477359650671', name:'Moringa Tablet', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650672', name:'Karavila Capsule', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650673', name:'Ashwagandha Capsule', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650674', name:'Moringa Capsule', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650675', name:'Heen Bovitiya Capsule', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650676', name:'Cinnamon Capsule', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'9477359650677', name:'Welpenela Capsule', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'CHICK PEAS 1KG', name:'CHICK PEAS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'CHOCLATE FLAVOR GOAT MILK 500ML', name:'CHOCLATE FLAVOR GOAT MILK 500ML', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'CHOCLATE FLAVORS GOAT MILK 180ML', name:'CHOCLATE FLAVORS GOAT MILK 180ML', icon:'🥛', unit:'pcs', category:'Dairy' },
+  { barcode:'COCOA POWDER 1KG', name:'COCOA POWDER 1KG', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'DARK CHOCLATE STICKS', name:'DARK CHOCLATE STICKS', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'DELIVERY COST', name:'DELIVERY COST', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'GOAT MILK 180ML', name:'GOAT MILK 180ML', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'gravity coconut oil 375', name:'gravity coconut oil 35', icon:'🫒', unit:'pcs', category:'Oils, Seasonings & Sauces' },
+  { barcode:'HD6428', name:'SOBHAYU COCONUT SYRUP 100ML', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'JAYADI BLACK GINGELLY 1KG', name:'BLACK GINGELLY 1KG', icon:'🌾', unit:'pcs', category:'Grains, Rice & Pasta' },
+  { barcode:'KENKO 1ST NUT AND FRUIT', name:'KENKO 1ST NUT AND FRUIT 100G', icon:'🥜', unit:'pcs', category:'Nuts' },
+  { barcode:'KITHUL FLOUR 1KG', name:'KITHUL FLOUR 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'MAA  NELLI COLA', name:'MAA  NELLI COLA', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'MAA  THAL COLA', name:'MAA  THAL COLA', icon:'🥤', unit:'pcs', category:'Beverage' },
+  { barcode:'MORINGA POWDER 1KG', name:'MORINGA POWDER 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'NATURAL HONEY 250 ML', name:'NATURAL HONEY 250 ML', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'NATURAL HONEY 500 ML', name:'NATURAL HONEY 500 ML', icon:'📦', unit:'pcs', category:'Wholesale' },
+  { barcode:'NATURAL HONEY JAGGERY 200G', name:'NATURAL HONEY JAGGERY 200G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'OF9927', name:'SOBHAYU COCONUT SYRUP 250ML', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'PLUMS 1KG', name:'PLUMS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'RICE FLAKES 1KG', name:'RICE FLACKS 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'SN4598', name:'SOBHAYU COCONUT SUGAR 500G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'SUGAR COATED CASHEW  1KG', name:'SUGAR COATED CASHEW 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'SY1790', name:'SOBHAYU COCONUT SUGAR 250G', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'VISAKA SESAMI ROLL', name:'VISAKA SESAMI ROLL', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'KENKO 1ST SESAME BALLS - 10 PCS (VISAKA SESAMI ROLL)', name:'KENKO 1ST SESAME BALLS -10 PCS (VISAKA SESAMI ROLL)', icon:'🍯', unit:'pcs', category:'Natural Sweeteners' },
+  { barcode:'6103738486251 (VISAKA SESAMI ROLL)', name:'Sesame Balls (VISAKA SESAMI ROLL)', icon:'📦', unit:'pcs', category:'Raw Material' },
+  { barcode:'WALNUTS BROKEN 1KG', name:'WALNUTS BROKEN 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+  { barcode:'WHITE GINGELLY 1KG', name:'WHITE GINGELLY 1KG', icon:'📦', unit:'kg', category:'Raw Material' },
+];
+
+let stockData   = {};   // { barcode: { ...product, qty, lastScan } }
+let lastBarcode = '';
+let currentScanned = null;
+let cameraActive  = false;
+let toastTimer;
+
+// ═══ TABS ═══
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['scan','stock','export'][i] === tab));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + tab).classList.add('active');
+  if (tab === 'stock')  renderStock();
+  if (tab === 'export') renderPreview();
+}
+
+// ═══ CAMERA / SCANNER — Native BarcodeDetector + ZXing ESM fallback ═══
+let scanStream = null;
+let scanAnimId = null;
+
+function toggleCamera() {
+  cameraActive ? stopCamera() : startCamera();
+}
+
+async function startCamera() {
+  const videoEl = document.getElementById('scan-video');
+
+  document.getElementById('scan-placeholder').style.display = 'none';
+  document.getElementById('scan-overlay').style.display     = 'flex';
+  document.getElementById('scan-status').textContent        = 'Camera starting...';
+  document.getElementById('scan-status').className          = 'scan-status active';
+  document.getElementById('btn-camera').textContent         = '⏹ Camera Off';
+  document.getElementById('btn-camera').className           = 'btn-scan stop';
+
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+  } catch (err) {
+    const n = String(err.name || '').toLowerCase();
+    if (n === 'notallowederror' || n === 'permissiondeniederror') {
+      showToast('📷 Camera permission deny යි. Browser settings > Allow', 'error');
+    } else if (n === 'notfounderror' || n === 'devicenotfounderror') {
+      showToast('📷 Camera device හොයා ගත නොහැකිය', 'error');
+    } else if (n === 'notreadableerror') {
+      showToast('📷 Camera වෙන app එකේ පාවිච්චි වෙනවා — close කරන්න', 'error');
+    } else {
+      showToast('Camera: ' + String(err.message || err).slice(0,70), 'error');
+    }
+    resetScanUI(); return;
+  }
+
+  videoEl.srcObject = scanStream;
+  videoEl.style.display = 'block';
+  try { await videoEl.play(); } catch(e) {}
+  cameraActive = true;
+  document.getElementById('scan-status').textContent = 'Scanning...';
+
+  // ── Path A: Native BarcodeDetector (Android Chrome 83+, iOS Safari 17.4+) ──
+  if (typeof BarcodeDetector !== 'undefined') {
+    let detector;
+    try {
+      detector = new BarcodeDetector({
+        formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf','qr_code','data_matrix']
+      });
+    } catch(e) { detector = new BarcodeDetector(); }
+
+    const tick = async () => {
+      if (!cameraActive) return;
+      if (videoEl.readyState >= 2) {
+        try {
+          const hits = await detector.detect(videoEl);
+          if (hits.length > 0) {
+            const code = hits[0].rawValue;
+            console.log('[DETECTOR] barcode:', code, 'format:', hits[0].format);
+            if (code && code !== lastBarcode) {
+              lastBarcode = code;
+              setTimeout(() => { lastBarcode = ''; }, 4000);
+              navigator.vibrate && navigator.vibrate([80]);
+              stopCamera();
+              processBarcode(code);
+              return;
+            }
+          }
+        } catch(e) {}
+      }
+      scanAnimId = requestAnimationFrame(tick);
+    };
+    scanAnimId = requestAnimationFrame(tick);
+    return;
+  }
+
+  // ── Path B: ZXing ESM lazy-load (older browsers without BarcodeDetector) ──
+  document.getElementById('scan-status').textContent = 'Loading scanner...';
+  try {
+    const zx = await import('https://esm.run/@zxing/library@0.21.3');
+    const hints = new Map();
+    hints.set(zx.DecodeHintType.TRY_HARDER, true);
+    const reader = new zx.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 200 });
+    window._zxReader = reader;
+    document.getElementById('scan-status').textContent = 'Scanning...';
+    await reader.decodeFromVideoElement(videoEl, (result) => {
+      if (!result) return;
+      const code = result.getText();
+      if (!code || code === lastBarcode) return;
+      lastBarcode = code;
+      setTimeout(() => { lastBarcode = ''; }, 4000);
+      navigator.vibrate && navigator.vibrate([80]);
+      stopCamera();
+      processBarcode(code);
+    });
+  } catch(e) {
+    showToast('Scanner load වුණේ නෑ — WiFi/Data on කරන්න', 'error');
+    stopCamera();
+  }
+}
+
+function stopCamera() {
+  if (scanAnimId) { cancelAnimationFrame(scanAnimId); scanAnimId = null; }
+  if (window._zxReader) { try { window._zxReader.reset(); } catch(e) {} window._zxReader = null; }
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  const v = document.getElementById('scan-video');
+  if (v) { v.srcObject = null; v.style.display = 'none'; }
+  resetScanUI();
+}
+
+function resetScanUI() {
+  cameraActive = false;
+  document.getElementById('scan-placeholder').style.display = 'flex';
+  document.getElementById('scan-overlay').style.display     = 'none';
+  document.getElementById('scan-status').textContent        = 'Camera off';
+  document.getElementById('scan-status').className          = 'scan-status';
+  document.getElementById('btn-camera').textContent         = '📷 Camera On';
+  document.getElementById('btn-camera').className           = 'btn-scan';
+}
+
+// ═══ BARCODE PROCESSING ═══
+function processManual() {
+  const code = document.getElementById('manual-barcode').value.trim();
+  if (!code) { showToast('Barcode ඇතුළු කරන්න', 'error'); return; }
+  processBarcode(code);
+  document.getElementById('manual-barcode').value = '';
+}
+
+function normalizeBarcode(code) {
+  return String(code).trim().replace(/^0+/, '') || '0';
+}
+function findInCatalog(raw) {
+  const norm = normalizeBarcode(raw);
+  return CATALOG.find(p => p.barcode === raw)
+      || CATALOG.find(p => normalizeBarcode(p.barcode) === norm)
+      || CATALOG.find(p => { const cn = normalizeBarcode(p.barcode); return norm.endsWith(cn) || cn.endsWith(norm); })
+      || null;
+}
+function processBarcode(code) {
+  console.log('[SCAN] code received:', code);
+  const product = findInCatalog(code);
+  console.log('[SCAN] product found:', product ? product.name : 'NOT FOUND');
+  hideResultCards();
+
+  if (product) {
+    // Keep catalog barcode as key; store scanned code for display
+    currentScanned = { ...product, scannedCode: code };
+    showResultCard(product, code);
+    navigator.vibrate && navigator.vibrate(60);
+    document.getElementById('scan-status').textContent = '✓ Found: ' + product.name;
+    document.getElementById('scan-status').className = 'scan-status found';
+  } else {
+    currentScanned = null;
+    document.getElementById('nf-barcode').textContent = 'Barcode: ' + code;
+    document.getElementById('nf-name').value = '';
+    document.getElementById('not-found-card').classList.add('show');
+    document.getElementById('not-found-card').dataset.barcode = code;
+    document.getElementById('scan-status').textContent = '✗ Not in catalog';
+    document.getElementById('scan-status').className = 'scan-status error';
+    navigator.vibrate && navigator.vibrate([80,40,80]);
+  }
+}
+
+function showResultCard(product, code) {
+  document.getElementById('res-icon').textContent = product.icon || '📦';
+  document.getElementById('res-name').textContent = product.name;
+  const displayCode = (product.barcode && product.barcode !== code)
+    ? code + ' → ' + product.barcode : code;
+  document.getElementById('res-barcode').textContent = displayCode;
+  document.getElementById('res-category').textContent = product.category || '';
+
+  const stockKey = product.barcode || code;
+  const existing = stockData[stockKey];
+  const isKg = product.unit === 'kg';
+
+  // Toggle input rows
+  document.getElementById('row-pcs').style.display = isKg ? 'none' : 'flex';
+  document.getElementById('row-kg').style.display  = isKg ? 'flex' : 'none';
+  document.getElementById('kg-display').style.display = isKg ? 'block' : 'none';
+  document.getElementById('unit-label').textContent = product.unit || 'pcs';
+  document.getElementById('stock-label').textContent = isKg
+    ? 'ස්ටොක් ප්‍රමාණය (kg + g)' : 'ස්ටොක් ප්‍රමාණය';
+
+  if (isKg) {
+    const existKg = existing ? existing.qty : 0;  // stored as decimal kg
+    const wholeKg = Math.floor(existKg);
+    const grams   = Math.round((existKg - wholeKg) * 1000);
+    document.getElementById('kg-input').value = wholeKg || 0;
+    document.getElementById('g-input').value  = grams   || 0;
+    updateKgDisplay();
+  } else {
+    if (existing) {
+      // Duplicate scan — show existing qty so user can add to it
+      document.getElementById('qty-input').value = existing.qty;
+      showToast('⚠️ Already in stock: ' + existing.qty + ' ' + (existing.unit||'pcs') + ' — update qty below', 'info');
+    } else {
+      document.getElementById('qty-input').value = '';
+    }
+  }
+
+  document.getElementById('result-card').classList.add('show');
+}
+
+function updateKgDisplay() {
+  const kg = parseFloat(document.getElementById('kg-input').value) || 0;
+  const g  = parseFloat(document.getElementById('g-input').value)  || 0;
+  const total = kg + g / 1000;
+  document.getElementById('kg-display').textContent = 'මුළු ප්‍රමාණය: ' + total.toFixed(3) + ' kg (' + (total * 1000).toFixed(0) + ' g)';
+}
+
+function hideResultCards() {
+  document.getElementById('result-card').classList.remove('show');
+  document.getElementById('not-found-card').classList.remove('show');
+}
+
+function adjustQty(delta) {
+  const inp = document.getElementById('qty-input');
+  inp.value = Math.max(0, parseInt(inp.value || 0) + delta);
+}
+
+// kg-input / g-input onchange handlers (called inline)
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('kg-input').addEventListener('input', updateKgDisplay);
+  document.getElementById('g-input').addEventListener('input', () => {
+    // auto carry: if g >= 1000, carry to kg
+    let g = parseFloat(document.getElementById('g-input').value) || 0;
+    if (g >= 1000) {
+      const carry = Math.floor(g / 1000);
+      document.getElementById('kg-input').value =
+        (parseFloat(document.getElementById('kg-input').value) || 0) + carry;
+      document.getElementById('g-input').value = g % 1000;
+    }
+    updateKgDisplay();
+  });
+});
+
+function addToStock() {
+  if (!currentScanned) return;
+  const isKg = currentScanned.unit === 'kg';
+  let qty;
+  if (isKg) {
+    const kg = parseFloat(document.getElementById('kg-input').value) || 0;
+    const g  = parseFloat(document.getElementById('g-input').value)  || 0;
+    qty = parseFloat((kg + g / 1000).toFixed(3));
+  } else {
+    qty = parseInt(document.getElementById('qty-input').value) || 0;
+  }
+  const key = currentScanned.barcode;
+
+  stockData[key] = {
+    ...currentScanned,
+    qty,
+    lastScan: new Date().toLocaleString('si-LK')
+  };
+
+  updateBadge();
+  renderStock();
+  hideResultCards();
+  currentScanned = null;
+  const qtyDisplay = (currentScanned && currentScanned.unit === 'kg')
+    ? qty.toFixed(3) + ' kg (' + (qty * 1000).toFixed(0) + ' g)'
+    : qty + ' ' + (stockData[key].unit || 'pcs');
+  showToast('✅ ' + stockData[key].name + ' — ' + qtyDisplay, 'success');
+  document.getElementById('scan-status').textContent = 'Ready to scan';
+  document.getElementById('scan-status').className = 'scan-status active';
+}
+
+function addUnknown() {
+  const name = document.getElementById('nf-name').value.trim();
+  const code = document.getElementById('not-found-card').dataset.barcode;
+  if (!name) { showToast('Item නම ඇතුළු කරන්න', 'error'); return; }
+
+  stockData[code] = {
+    barcode: code, name, icon: '📦', unit: 'pcs',
+    category: 'Unknown', qty: 1,
+    lastScan: new Date().toLocaleString('si-LK')
+  };
+
+  updateBadge();
+  renderStock();
+  hideResultCards();
+  showToast('✅ ' + name + ' added', 'success');
+}
+
+function skipUnknown() {
+  hideResultCards();
+  document.getElementById('scan-status').textContent = 'Ready to scan';
+  document.getElementById('scan-status').className = 'scan-status active';
+}
+
+// ═══ STOCK LIST ═══
+function renderStock() {
+  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const list = document.getElementById('stock-list');
+  const items = Object.values(stockData).filter(i => !q || i.name.toLowerCase().includes(q) || i.barcode.includes(q));
+
+  const allItems = Object.values(stockData);
+  document.getElementById('s-items').textContent = allItems.length;
+  // Separate totals: pcs count vs kg total
+  const pcsTotal = allItems.filter(i => i.unit !== 'kg').reduce((s,i) => s + i.qty, 0);
+  const kgTotal  = allItems.filter(i => i.unit === 'kg').reduce((s,i) => s + i.qty, 0);
+  const totalEl  = document.getElementById('s-total');
+  if (kgTotal > 0 && pcsTotal > 0) {
+    totalEl.textContent = pcsTotal + ' + ' + kgTotal.toFixed(3) + 'kg';
+    totalEl.style.fontSize = '13px';
+  } else if (kgTotal > 0) {
+    totalEl.textContent = kgTotal.toFixed(3) + ' kg';
+  } else {
+    totalEl.textContent = pcsTotal;
+    totalEl.style.fontSize = '';
+  }
+
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-state"><div class="emoji">📦</div><div>${q ? 'Results නැත' : 'Scan කළ items මෙහි දිස් වේ'}</div></div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(item => `
+    <div class="stock-item">
+      <div class="item-icon">${item.icon || '📦'}</div>
+      <div class="item-info">
+        <div class="item-name">${item.name}</div>
+        <div class="item-barcode">${item.barcode}</div>
+      </div>
+      <div class="item-qty">
+        <div class="qty-val" style="color:${item.qty > 0 ? 'var(--accent)' : 'var(--red)'}">
+          ${item.unit === 'kg' ? item.qty.toFixed(3) : item.qty}
+        </div>
+        <div class="qty-unit">${item.unit || 'pcs'}</div>
+        ${item.unit === 'kg' ? '<div class="qty-unit" style="color:var(--muted);font-size:9px;">(' + (item.qty * 1000).toFixed(0) + ' g)</div>' : ''}
+      </div>
+      <button class="edit-btn" onclick="editItem('${item.barcode}')">✏️</button>
+      <button class="del-btn" onclick="deleteItem('${item.barcode}')">🗑</button>
+    </div>
+  `).join('');
+}
+
+function editItem(code) {
+  const item = stockData[code];
+  if (!item) return;
+  currentScanned = item;
+  showResultCard(item, code);
+  switchTab('scan');
+  document.getElementById('qty-input').value = item.qty;
+  showToast('Edit mode: ' + item.name, 'info');
+}
+
+function deleteItem(code) {
+  const name = stockData[code]?.name;
+  delete stockData[code];
+  updateBadge(); renderStock();
+  showToast('🗑 Deleted: ' + name, 'error');
+}
+
+// ═══ EXPORT ═══
+function renderPreview() {
+  const body = document.getElementById('preview-body');
+  const items = Object.values(stockData);
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No data yet</td></tr>';
+    return;
+  }
+  body.innerHTML = items.map((item, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${item.name}</td>
+      <td style="font-family:monospace;font-size:11px">${item.barcode}</td>
+      <td style="color:var(--accent);font-weight:800">${item.qty}</td>
+      <td style="font-size:11px;color:var(--muted)">${item.lastScan}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Export + WhatsApp Share ──
+let lastExportedBlob = null;
+let lastExportedName = '';
+
+function exportAndShare() {
+  exportExcel(false); // export without auto-share
+}
+
+// ════ CLOUDFLARE SYNC CONFIG ════
+const CF = {
+  url: 'https://mute-tree-2357.kenko1st-pubudu.workers.dev',
+  key: 'kenko2024',
+};
+
+async function cfPushData(wbout, filename, itemCount) {
+  try {
+    const bytes  = new Uint8Array(wbout);
+    let binary   = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binary);
+    const r = await fetch(CF.url + '/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Key': CF.key },
+      body: JSON.stringify({ filename, itemCount, timestamp: new Date().toISOString(), xlsxBase64: b64 }),
+    });
+    const d = await r.json();
+    return d.ok;
+  } catch(e) { console.error('CF push failed:', e); return false; }
+}
+
+
+// ════ DIRECT CLOUD PUSH (bypasses share flow) ════
+async function pushToCloud() {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('Items නෑ — scan කරන්න', 'error'); return; }
+
+  const btn = document.getElementById('btn-cloud-push');
+  if (btn) { btn.textContent = '⏳ Sending...'; btn.disabled = true; }
+
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g, '-');
+  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+
+  const ws_data = [
+    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
+    ...items.map((item, i) => [
+      i + 1, item.name, item.category || '', item.barcode,
+      item.unit === 'kg' ? parseFloat(item.qty.toFixed(3)) : item.qty,
+      item.unit || 'pcs', item.lastScan
+    ]),
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+  const CF_URL = 'https://mute-tree-2357.kenko1st-pubudu.workers.dev';
+  const CF_KEY = 'kenko2024';
+
+  try {
+    const bytes  = new Uint8Array(wbout);
+    let binary   = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binary);
+
+    const r = await fetch(CF_URL + '/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Key': CF_KEY },
+      body: JSON.stringify({
+        filename: fname,
+        itemCount: items.length,
+        timestamp: new Date().toISOString(),
+        xlsxBase64: b64,
+      }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast('☁ ' + items.length + ' items Diff Tool-ට send විය! ✅', 'success');
+    } else {
+      showToast('❌ Failed: ' + d.error, 'error');
+    }
+  } catch(e) {
+    showToast('❌ Network error: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.textContent = '☁ Diff Tool-ට Send කරන්න'; btn.disabled = false; }
+  }
+}
+function shareExcel() { shareExcelFile(); }
+
+async function shareExcelFile() {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('No data to export', 'error'); return; }
+
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g, '-');
+  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+
+  // Build rows: BB format — Col D=Barcode, Col E=Qty (index 3,4)
+  // Full row: [#, Name, Category, Barcode, Quantity, Unit, Scanned At]
+  const ws_data = [
+    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
+    ...items.map((item, i) => [
+      i + 1, item.name, item.category || '', item.barcode,
+      item.unit === 'kg' ? parseFloat(item.qty.toFixed(3)) : item.qty,
+      item.unit || 'pcs', item.lastScan
+    ]),
+    [],
+    ['', '', '', 'Total Items', items.length, ''],
+    ['', '', '', 'Export Date', dateStr,       ''],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  ws['!cols'] = [{wch:4},{wch:28},{wch:16},{wch:18},{wch:10},{wch:8},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+
+  // Generate as ArrayBuffer (needed for both share and diff auto-load)
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+  // ── Auto-load into Diff tool (BB slot, same device) ──
+  sendToDiff(wbout.slice(0), fname, items.length);
+
+  // ── Push to Cloudflare for cross-device sync ──
+  if (CF.url) {
+    cfPushData(wbout.slice(0), fname, items.length).then(ok => {
+      if (ok) {
+        showToast('☁ Cloud sync ✅ · Diff tool-ට load විය!', 'success');
+      } else {
+        showToast('📊 Diff tool-ට load විය (Cloud sync failed)', 'success');
+      }
+    });
+  } else {
+    showToast('📊 Diff tool-ට auto-load විය!', 'success');
+  }
+
+  // ── Also share the file externally ──
+  const blob = new Blob([wbout], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  const file = new File([blob], fname, { type: blob.type });
+
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        title: 'Kenko1st Stock — ' + dateStr,
+        text:  items.length + ' items scanned',
+        files: [file],
+      });
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        // download fallback
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fname;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    }
+  }
+}
+
+function copyForWhatsApp() {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('No data to copy', 'error'); return; }
+
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
+  const pcsItems = items.filter(i => i.unit !== 'kg');
+  const kgItems  = items.filter(i => i.unit === 'kg');
+  const pcsTotal = pcsItems.reduce((s,i) => s + i.qty, 0);
+  const kgTotal  = kgItems.reduce((s,i)  => s + i.qty, 0);
+
+  const lines = ['📦 *Kenko1st Stock Count*', '📅 ' + dateStr, ''];
+
+  // Group by category
+  const cats = [...new Set(items.map(i => i.category || 'Other'))].sort();
+  cats.forEach(cat => {
+    const catItems = items.filter(i => (i.category||'Other') === cat);
+    lines.push('*' + cat + '*');
+    catItems.forEach((item, i) => {
+      const qty = item.unit === 'kg'
+        ? item.qty.toFixed(3) + ' kg'
+        : item.qty + ' ' + (item.unit || 'pcs');
+      lines.push('  • ' + item.name + ' — ' + qty);
+    });
+    lines.push('');
+  });
+
+  lines.push('─────────────────');
+  if (kgTotal > 0) lines.push('Total (pcs): *' + pcsTotal + '*   Total (kg): *' + kgTotal.toFixed(3) + 'kg*');
+  else lines.push('Total qty: *' + pcsTotal + ' pcs*');
+  lines.push('Total item types: *' + items.length + '*');
+
+  const text = lines.join('\n');
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('✅ Copied! Paste in WhatsApp', 'success'))
+      .catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try {
+    document.execCommand('copy');
+    showToast('✅ Copied! Paste in WhatsApp', 'success');
+  } catch(e) {
+    showToast('Copy failed — select text manually', 'error');
+  }
+  document.body.removeChild(ta);
+}
+
+function exportExcel(autoShare) {
+  const items = Object.values(stockData);
+  if (!items.length) { showToast('No data to export', 'error'); return; }
+
+  const date    = new Date();
+  const dateStr = date.toLocaleDateString('si-LK').replace(/\//g,'-');
+  const fname   = 'Kenko_Stock_' + dateStr + '.xlsx';
+
+  const ws_data = [
+    ['#', 'Item Name', 'Category', 'Barcode', 'Quantity', 'Unit', 'Scanned At'],
+    ...items.map((item, i) => [
+      i+1, item.name, item.category || '', item.barcode,
+      item.qty, item.unit || 'pcs', item.lastScan
+    ]),
+    [],
+    ['', '', '', 'Total Quantity', items.reduce((s,i) => s + i.qty, 0), ''],
+    ['', '', '', 'Export Date',    dateStr, ''],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  ws['!cols'] = [{wch:4},{wch:28},{wch:16},{wch:18},{wch:10},{wch:8},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+
+  if (autoShare && navigator.share && navigator.canShare) {
+    // Generate file blob for Web Share API
+    const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+    const blob  = new Blob([wbout], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const file  = new File([blob], fname, { type: blob.type });
+
+    if (navigator.canShare({ files:[file] })) {
+      navigator.share({
+        title: 'Kenko1st Stock Count',
+        text:  'Stock count — ' + items.length + ' items',
+        files: [file],
+      }).then(() => showToast('✅ Shared!', 'success'))
+        .catch(err => {
+          // Fallback: WhatsApp web with text summary
+          copyForWhatsApp();
+        });
+      return;
+    }
+  }
+
+  if (autoShare) {
+    copyForWhatsApp();
+    return;
+  }
+
+  XLSX.writeFile(wb, fname);
+  showToast('✅ Excel downloaded!', 'success');
+}
+
+
+
+
+function clearAll() {
+  if (!Object.keys(stockData).length) { showToast('Data නැත', 'error'); return; }
+  if (confirm('සියලු stock data delete කරන්නද?')) {
+    stockData = {};
+    updateBadge(); renderStock(); renderPreview();
+    showToast('🗑 Stock data cleared', 'error');
   }
 }
 
